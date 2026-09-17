@@ -1,5 +1,6 @@
 package com.vot.player.data.youtube
 
+import com.vot.player.data.model.VideoQuality
 import com.vot.player.data.model.YouTubeVideoInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,7 +28,7 @@ class YouTubeStreamExtractor(
             val matcher = VIDEO_ID_REGEX.matcher(url)
             return if (matcher.matches()) {
                 val id = matcher.group(1)
-                if (id.length == 11) id else null
+                if (id?.length == 11) id else null
             } else if (url.length == 11 && !url.contains("/")) {
                 url
             } else {
@@ -74,12 +75,14 @@ class YouTubeStreamExtractor(
             val title = videoDetails.optString("title", "YouTube Video")
             val author = videoDetails.optString("author", "Unknown Channel")
             val durationSeconds = videoDetails.optString("lengthSeconds", "0").toLongOrNull() ?: 0L
+            val thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
             val streamingData = json.optJSONObject("streamingData")
                 ?: return@withContext Result.failure(Exception("Streaming formats not found. Video may be restricted."))
 
-            var bestStreamUrl: String? = null
-            var directAudioUrl: String? = null
+            val qualityList = mutableListOf<VideoQuality>()
+            var bestProgressiveUrl: String? = null
+            var bestAudioUrl: String? = null
 
             // 1. Check direct progressive formats (video + audio combined)
             val formats = streamingData.optJSONArray("formats")
@@ -87,45 +90,66 @@ class YouTubeStreamExtractor(
                 for (i in 0 until formats.length()) {
                     val fmt = formats.getJSONObject(i)
                     val url = fmt.optString("url")
-                    if (url.isNotEmpty()) {
-                        bestStreamUrl = url
-                        break
-                    }
-                }
-            }
-
-            // 2. If no progressive format found, check adaptive formats
-            if (bestStreamUrl == null) {
-                val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
-                if (adaptiveFormats != null && adaptiveFormats.length() > 0) {
-                    var bestVideoHeight = 0
-                    for (i in 0 until adaptiveFormats.length()) {
-                        val fmt = adaptiveFormats.getJSONObject(i)
-                        val mimeType = fmt.optString("mimeType")
-                        val url = fmt.optString("url")
-                        val height = fmt.optInt("height", 0)
-
-                        if (url.isNotEmpty()) {
-                            if (mimeType.startsWith("video/") && height > bestVideoHeight && height <= 1080) {
-                                bestVideoHeight = height
-                                bestStreamUrl = url
-                            } else if (mimeType.startsWith("audio/") && directAudioUrl == null) {
-                                directAudioUrl = url
-                            }
+                    val height = fmt.optInt("height", 0)
+                    val qualityLabel = fmt.optString("qualityLabel", "${height}p")
+                    if (url.isNotEmpty() && height > 0) {
+                        qualityList.add(VideoQuality(qualityLabel, height, url, null))
+                        if (bestProgressiveUrl == null || height > 480) {
+                            bestProgressiveUrl = url
                         }
                     }
                 }
             }
 
-            if (bestStreamUrl == null) {
-                // Fallback to HLS manifest if present
-                val hlsManifest = streamingData.optString("hlsManifestUrl")
-                if (hlsManifest.isNotEmpty()) {
-                    bestStreamUrl = hlsManifest
+            // 2. Parse adaptive formats (video-only and audio-only)
+            val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
+            if (adaptiveFormats != null && adaptiveFormats.length() > 0) {
+                // Find best audio stream first
+                for (i in 0 until adaptiveFormats.length()) {
+                    val fmt = adaptiveFormats.getJSONObject(i)
+                    val mimeType = fmt.optString("mimeType")
+                    val url = fmt.optString("url")
+                    if (url.isNotEmpty() && mimeType.startsWith("audio/mp4")) {
+                        bestAudioUrl = url
+                        break
+                    }
+                }
+                if (bestAudioUrl == null) {
+                    for (i in 0 until adaptiveFormats.length()) {
+                        val fmt = adaptiveFormats.getJSONObject(i)
+                        val mimeType = fmt.optString("mimeType")
+                        val url = fmt.optString("url")
+                        if (url.isNotEmpty() && mimeType.startsWith("audio/")) {
+                            bestAudioUrl = url
+                            break
+                        }
+                    }
+                }
+
+                // Add adaptive video streams (1080p, 1440p, 2160p)
+                for (i in 0 until adaptiveFormats.length()) {
+                    val fmt = adaptiveFormats.getJSONObject(i)
+                    val mimeType = fmt.optString("mimeType")
+                    val url = fmt.optString("url")
+                    val height = fmt.optInt("height", 0)
+                    val qualityLabel = fmt.optString("qualityLabel", "${height}p")
+
+                    if (url.isNotEmpty() && mimeType.startsWith("video/mp4") && height >= 720) {
+                        if (qualityList.none { it.height == height }) {
+                            qualityList.add(VideoQuality(qualityLabel, height, url, bestAudioUrl))
+                        }
+                    }
                 }
             }
 
-            if (bestStreamUrl.isNullOrEmpty()) {
+            // Sort quality options descending (e.g. 1080p, 720p, 480p, 360p)
+            qualityList.sortByDescending { it.height }
+
+            val primaryStreamUrl = bestProgressiveUrl 
+                ?: qualityList.firstOrNull()?.videoUrl 
+                ?: streamingData.optString("hlsManifestUrl")
+
+            if (primaryStreamUrl.isNullOrEmpty()) {
                 return@withContext Result.failure(Exception("No playable video streams found for video $videoId"))
             }
 
@@ -135,8 +159,10 @@ class YouTubeStreamExtractor(
                     title = title,
                     author = author,
                     durationSeconds = durationSeconds,
-                    streamUrl = bestStreamUrl,
-                    directAudioUrl = directAudioUrl
+                    streamUrl = primaryStreamUrl,
+                    directAudioUrl = bestAudioUrl,
+                    thumbnailUrl = thumbnailUrl,
+                    availableQualities = qualityList
                 )
             )
         } catch (e: Exception) {

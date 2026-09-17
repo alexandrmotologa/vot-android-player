@@ -1,7 +1,5 @@
 package com.vot.player.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,12 +7,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vot.player.data.model.SubtitlesMode
 import com.vot.player.data.model.TargetLanguage
+import com.vot.player.data.model.VideoQuality
 import com.vot.player.data.model.VoiceType
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.DarkCard
@@ -43,16 +50,24 @@ fun SettingsDialog(
     onLanguageChange: (TargetLanguage) -> Unit,
     currentSpeed: Float,
     onSpeedChange: (Float) -> Unit,
+    availableQualities: List<VideoQuality> = emptyList(),
+    selectedQuality: VideoQuality? = null,
+    onQualityChange: (VideoQuality) -> Unit = {},
+    onExportClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = DarkCard),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp)
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     text = "VOT Settings",
@@ -62,6 +77,31 @@ fun SettingsDialog(
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Video Resolution / Quality (1080p / 720p / 480p / 360p)
+                if (availableQualities.isNotEmpty()) {
+                    Text(text = "Video Quality", color = TextSecondary, fontSize = 13.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        availableQualities.take(4).forEach { quality ->
+                            FilterChip(
+                                selected = selectedQuality?.height == quality.height,
+                                onClick = { onQualityChange(quality) },
+                                label = { Text(quality.label) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AccentRed,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0x22FFFFFF))
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
 
                 // Voice Type (Standard vs Live Voice)
                 Text(text = "Voice Synthesis Type", color = TextSecondary, fontSize = 13.sp)
@@ -152,6 +192,28 @@ fun SettingsDialog(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Offline Export Button
+                Button(
+                    onClick = {
+                        onExportClick()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
+                    Text("Save Video Offline (Export MP4)", color = Color.White, fontSize = 14.sp)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

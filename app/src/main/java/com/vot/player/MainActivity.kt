@@ -1,64 +1,34 @@
 package com.vot.player
 
 import android.app.PictureInPictureParams
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import com.vot.player.data.db.WatchHistoryDatabase
+import com.vot.player.data.db.WatchHistoryItem
+import com.vot.player.data.extractor.MultiPlatformExtractor
+import com.vot.player.data.model.PlatformType
 import com.vot.player.data.model.SubtitlesMode
 import com.vot.player.data.model.TargetLanguage
+import com.vot.player.data.model.UniversalVideoInfo
 import com.vot.player.data.model.VoiceType
 import com.vot.player.data.vot.VotApiClient
-import com.vot.player.data.youtube.YouTubeStreamExtractor
+import com.vot.player.export.ExportState
+import com.vot.player.export.VotExportManager
 import com.vot.player.player.VotPlayerManager
+import com.vot.player.ui.HistoryScreen
 import com.vot.player.ui.PlayerScreen
-import com.vot.player.ui.theme.AccentRed
+import com.vot.player.ui.components.ExportProgressDialog
 import com.vot.player.ui.theme.DarkBackground
-import com.vot.player.ui.theme.DarkCard
-import com.vot.player.ui.theme.TextPrimary
-import com.vot.player.ui.theme.TextSecondary
 import com.vot.player.ui.theme.VotPlayerTheme
 import kotlinx.coroutines.launch
 
@@ -69,36 +39,61 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var playerManager: VotPlayerManager
-    private val streamExtractor = YouTubeStreamExtractor()
+    private lateinit var historyDb: WatchHistoryDatabase
+    private lateinit var exportManager: VotExportManager
+    private val streamExtractor = MultiPlatformExtractor()
     private val votApiClient = VotApiClient()
 
     private var activeVideoUrl by mutableStateOf<String?>(null)
-    private var videoTitle by mutableStateOf("VOT Player")
-    private var videoAuthor by mutableStateOf("")
+    private var currentVideoInfo by mutableStateOf<UniversalVideoInfo?>(null)
     private var statusMessage by mutableStateOf<String?>(null)
     private var isLoading by mutableStateOf(false)
+    private var historyList by mutableStateOf<List<WatchHistoryItem>>(emptyList())
 
     private var selectedVoiceType by mutableStateOf(VoiceType.STANDARD)
     private var selectedSubtitles by mutableStateOf(SubtitlesMode.OFF)
     private var selectedLanguage by mutableStateOf(TargetLanguage.RUSSIAN)
+    private var currentTranslatedAudioUrl by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        playerManager = VotPlayerManager(this, lifecycleScope)
+        historyDb = WatchHistoryDatabase.getInstance(this)
+        exportManager = VotExportManager(this)
 
+        playerManager = VotPlayerManager(
+            context = this,
+            scope = lifecycleScope,
+            onPositionSaved = { videoId, posMs, durationMs ->
+                lifecycleScope.launch {
+                    historyDb.updatePosition(videoId, posMs, durationMs)
+                }
+            }
+        )
+
+        loadHistory()
         handleIntent(intent)
 
         setContent {
             VotPlayerTheme {
+                val exportState by exportManager.exportState.collectAsState()
+                var showExportDialog by remember { mutableStateOf(false) }
+
+                LaunchedEffect(exportState) {
+                    if (exportState !is ExportState.Idle) {
+                        showExportDialog = true
+                    }
+                }
+
                 Scaffold(
                     containerColor = DarkBackground,
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
-                    if (activeVideoUrl != null) {
+                    if (activeVideoUrl != null && currentVideoInfo != null) {
+                        val info = currentVideoInfo!!
                         PlayerScreen(
                             playerManager = playerManager,
-                            videoTitle = videoTitle,
-                            videoAuthor = videoAuthor,
+                            videoTitle = info.title,
+                            videoAuthor = info.author,
                             statusMessage = statusMessage,
                             isLoading = isLoading,
                             selectedVoiceType = selectedVoiceType,
@@ -117,16 +112,63 @@ class MainActivity : ComponentActivity() {
                                 activeVideoUrl?.let { loadVideoAndTranslate(it) }
                             },
                             onEnterPiP = { enterPictureInPicture() },
+                            onNavigateBack = {
+                                playerManager.pause()
+                                activeVideoUrl = null
+                                loadHistory()
+                            },
+                            onExportVideo = {
+                                lifecycleScope.launch {
+                                    showExportDialog = true
+                                    exportManager.exportVideo(
+                                        videoUrl = info.streamUrl,
+                                        audioUrl = currentTranslatedAudioUrl,
+                                        title = info.title
+                                    )
+                                }
+                            },
                             modifier = Modifier.padding(innerPadding)
                         )
                     } else {
-                        HomeScreen(
-                            onPlayUrl = { url -> loadVideoAndTranslate(url) },
-                            modifier = Modifier.padding(innerPadding)
+                        HistoryScreen(
+                            historyItems = historyList,
+                            onPlayUrl = { url, startPos ->
+                                loadVideoAndTranslate(url, startPos)
+                            },
+                            onDeleteItem = { videoId ->
+                                lifecycleScope.launch {
+                                    historyDb.deleteItem(videoId)
+                                    loadHistory()
+                                }
+                            },
+                            onClearAll = {
+                                lifecycleScope.launch {
+                                    historyDb.clearAll()
+                                    loadHistory()
+                                }
+                            }
+                        )
+                    }
+
+                    if (showExportDialog && exportState !is ExportState.Idle) {
+                        ExportProgressDialog(
+                            exportState = exportState,
+                            onDismiss = {
+                                showExportDialog = false
+                                if (exportState is ExportState.Success || exportState is ExportState.Error) {
+                                    exportManager.reset()
+                                }
+                            }
                         )
                     }
                 }
             }
+        }
+    }
+
+    private fun loadHistory() {
+        lifecycleScope.launch {
+            historyList = historyDb.getAllHistory()
         }
     }
 
@@ -143,14 +185,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun loadVideoAndTranslate(rawUrl: String) {
+    private fun loadVideoAndTranslate(rawUrl: String, requestedStartPositionMs: Long = 0L) {
         activeVideoUrl = rawUrl
         isLoading = true
         statusMessage = "Resolving video stream..."
 
         lifecycleScope.launch {
-            // 1. Extract video stream from YouTube
-            val streamResult = streamExtractor.extractStreamInfo(rawUrl)
+            val streamResult = streamExtractor.extract(rawUrl)
             if (streamResult.isFailure) {
                 isLoading = false
                 statusMessage = "Error: ${streamResult.exceptionOrNull()?.message}"
@@ -158,22 +199,35 @@ class MainActivity : ComponentActivity() {
             }
 
             val videoInfo = streamResult.getOrThrow()
-            videoTitle = videoInfo.title
-            videoAuthor = videoInfo.author
-            statusMessage = "Requesting Yandex voice-over translation..."
+            currentVideoInfo = videoInfo
+            statusMessage = "Requesting AI voice-over translation..."
 
-            // 2. Request Translation from VOT API
+            // Check if we have an existing resume position from history if none explicitly given
+            val resumePositionMs = if (requestedStartPositionMs > 0L) {
+                requestedStartPositionMs
+            } else {
+                val existing = historyDb.getHistoryItem(videoInfo.id)
+                existing?.lastPositionMs ?: 0L
+            }
+
+            // Request Translation from VOT API
+            val votUrl = if (videoInfo.platform == PlatformType.YOUTUBE) {
+                "https://www.youtube.com/watch?v=${videoInfo.id}"
+            } else {
+                videoInfo.rawUrl
+            }
+
             val votResult = votApiClient.translateVideo(
-                videoUrl = "https://www.youtube.com/watch?v=${videoInfo.videoId}",
+                videoUrl = votUrl,
                 durationSeconds = videoInfo.durationSeconds.toDouble(),
                 targetLang = selectedLanguage,
                 voiceType = selectedVoiceType,
                 onProgress = { statusMessage = it }
             )
 
-            // 3. Request Subtitles if enabled
+            // Request Subtitles if Russian mode
             val subtitlesResult = votApiClient.getSubtitles(
-                videoUrl = "https://www.youtube.com/watch?v=${videoInfo.videoId}",
+                videoUrl = votUrl,
                 targetLang = selectedLanguage
             )
             val cues = subtitlesResult.getOrDefault(emptyList())
@@ -182,10 +236,29 @@ class MainActivity : ComponentActivity() {
             statusMessage = null
 
             val translatedAudioUrl = votResult.getOrNull()?.url
+            currentTranslatedAudioUrl = translatedAudioUrl
+
+            // Save to database
+            historyDb.saveOrUpdate(
+                WatchHistoryItem(
+                    videoId = videoInfo.id,
+                    url = rawUrl,
+                    title = videoInfo.title,
+                    thumbnailUrl = videoInfo.thumbnailUrl ?: "",
+                    lastPositionMs = resumePositionMs,
+                    durationMs = videoInfo.durationSeconds * 1000L,
+                    preferredVoice = selectedVoiceType.name.lowercase(),
+                    originalVolume = playerManager.originalVolume.value,
+                    voiceVolume = playerManager.voiceoverVolume.value
+                )
+            )
+            loadHistory()
+
             playerManager.prepare(
-                videoStreamUrl = videoInfo.streamUrl,
+                videoInfo = videoInfo,
                 voiceoverAudioUrl = translatedAudioUrl,
-                subtitles = cues
+                subtitles = cues,
+                startPositionMs = resumePositionMs
             )
             playerManager.setSubtitlesEnabled(selectedSubtitles == SubtitlesMode.RUSSIAN)
         }
@@ -210,124 +283,5 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         playerManager.release()
-    }
-}
-
-@Composable
-private fun HomeScreen(
-    onPlayUrl: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var inputUrl by remember { mutableStateOf("") }
-    var clipboardUrl by remember { mutableStateOf<String?>(null) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    LaunchedEffect(Unit) {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = clipboard.primaryClip
-        if (clip != null && clip.itemCount > 0) {
-            val text = clip.getItemAt(0).text?.toString() ?: ""
-            if (YouTubeStreamExtractor.extractVideoId(text) != null) {
-                clipboardUrl = text
-            }
-        }
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "VOT Player",
-            color = TextPrimary,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Voice-Over Translation for YouTube",
-            color = TextSecondary,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 6.dp)
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Clipboard 1-Tap Card
-        if (clipboardUrl != null) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DarkCard),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Link detected in clipboard:",
-                        color = TextSecondary,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = clipboardUrl ?: "",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = { onPlayUrl(clipboardUrl!!) },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Play with Voice-Over")
-                    }
-                }
-            }
-        }
-
-        // Manual Paste Box
-        OutlinedTextField(
-            value = inputUrl,
-            onValueChange = { inputUrl = it },
-            label = { Text("Paste YouTube Video URL") },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = AccentRed,
-                unfocusedBorderColor = Color(0x44FFFFFF),
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
-            ),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Button(
-            onClick = {
-                if (inputUrl.isNotBlank()) onPlayUrl(inputUrl.trim())
-            },
-            enabled = inputUrl.isNotBlank(),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().height(48.dp)
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Open & Translate", fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "💡 Tip: You can also open any YouTube video in the official YouTube app and tap Share -> VOT Player!",
-            color = TextSecondary,
-            fontSize = 12.sp,
-            lineHeight = 18.sp
-        )
     }
 }

@@ -1,6 +1,6 @@
 # VOT Player for Android
 
-Native Android video player that brings automated Voice-Over-Translation (VOT) to YouTube videos. It plays the original video stream alongside a synchronized translated voice track using the Yandex VOT protocol.
+Native Android video player that brings automated Voice-Over-Translation (VOT) to YouTube and web videos. It plays the original video stream alongside a synchronized translated voice track using the Yandex VOT protocol.
 
 ## Features
 
@@ -8,20 +8,29 @@ Native Android video player that brings automated Voice-Over-Translation (VOT) t
 - Dual audio mixing: independent volume controls for the original audio track and the translated voice (0% to 100%), with quick presets for voice focus, balanced mix, and original only.
 - Translation modes: toggle between standard translation and Live Voice. Supports translation into Russian and English.
 - Synchronized subtitles: on-screen subtitle overlay with customizable display options.
+- MediaSession & lockscreen controls: persistent foreground notification with playback controls (play, pause, seek +/-10s), artwork, and Bluetooth/Android Auto metadata.
+- Watch history & continue watching: local SQLite database tracks watched videos, progress bars, and resume positions.
+- High-resolution video: parses adaptive DASH formats and merges 1080p, 1440p, or 4K video streams with audio in real time.
+- Multi-platform support: extracts and plays videos from YouTube, Twitch VODs/clips, TikTok, Twitter/X, and direct MP4/M3U8 URLs.
+- Offline export: download and save translated videos as standalone MP4 files to device storage (`Downloads/VOT`).
+- Android TV support: full D-pad remote navigation for smart TVs and TV boxes.
 - Picture-in-Picture (PiP) and background playback: continue watching while using other apps or with the screen turned off.
 - Playback synchronization: dual ExoPlayer instances with periodic clock drift correction and playback speed matching.
-- Direct stream extraction: extracts video and audio streams directly through the InnerTube Android VR client, avoiding external scraping services.
 - Resilient backend client: binary protobuf protocol with HMAC-SHA256 request signing and automatic proxy worker rotation (`vot-worker.eu.cc`, `vot-worker.vtrans.eu.cc`).
-- Touch controls: vertical gestures for volume adjustment, double tap to seek forward or backward.
+- Touch gestures: vertical swiping for volume adjustment, double tap to seek forward or backward.
 
 ## Architecture
 
-The project is structured into three main layers:
+The project is organized into modular layers:
 
-1. `data/youtube`: `YouTubeStreamExtractor` queries the YouTube InnerTube API (Android VR client) to obtain direct `googlevideo.com` progressive MP4 stream URLs.
-2. `data/vot`: `VotProtobuf` and `VotApiClient` handle binary Protobuf serialization, generate SHA-256 HMAC request signatures, set security headers (`Sec-Vtrans-Token`, `Sec-Vtrans-Sk`, `Vtrans-Signature`), and communicate with VOT proxy workers.
-3. `player`: `VotPlayerManager` orchestrates two `ExoPlayer` instances (one for the main video stream, one for the translated audio stream), synchronizing position and playback state.
-4. `ui`: Jetpack Compose UI including `PlayerScreen`, volume mixing controls (`DualVolumeBar`), gesture overlay (`GestureOverlay`), settings (`SettingsDialog`), and synchronized subtitle rendering (`SubtitleOverlay`).
+1. `data/extractor`: `MultiPlatformExtractor` routes incoming links across platforms (YouTube, Twitch, TikTok, Twitter/X, direct streams).
+2. `data/youtube`: `YouTubeStreamExtractor` queries the YouTube InnerTube API (Android VR client) to obtain direct `googlevideo.com` progressive MP4 streams and adaptive 1080p/4K streams.
+3. `data/vot`: `VotProtobuf` and `VotApiClient` handle binary Protobuf serialization, generate SHA-256 HMAC request signatures, set security headers (`Sec-Vtrans-Token`, `Sec-Vtrans-Sk`, `Vtrans-Signature`), and communicate with VOT proxy workers.
+4. `data/db`: `WatchHistoryDatabase` manages local SQLite persistence for playback positions, timestamps, and volume preferences.
+5. `player`: `VotPlayerManager` orchestrates dual `ExoPlayer` instances, handles `MergingMediaSource` for high-resolution video streams, and registers with `MediaSession`.
+6. `service`: `VotMediaService` publishes system media session notifications for background playback and lockscreen controls.
+7. `export`: `VotExportManager` downloads and packages video streams and translated audio into local MP4 files.
+8. `ui`: Jetpack Compose interface including `HistoryScreen`, `PlayerScreen`, volume controls (`DualVolumeBar`), gesture overlay (`GestureOverlay`), settings (`SettingsDialog`), and `ExportProgressDialog`.
 
 ## Requirements
 
@@ -54,10 +63,10 @@ To install directly to a connected Android device:
 ## How to use
 
 1. Open a YouTube video in the official YouTube app or your browser.
-2. Tap the **Share** button and select **VOT Player** from the app list.
+2. Tap the **Share** button and select **VOT Player** from the app list (or paste any video link into the home screen search bar).
 3. The app opens, extracts the video streams, requests the voice-over translation, and starts playing both synchronized streams.
 4. Use the bottom sliders to balance the original audio volume and the translated voice volume.
-5. Tap the settings gear icon to select standard or live voice, toggle subtitles, or switch translation language.
+5. Tap the settings gear icon to select video quality (up to 4K), standard or live voice, toggle subtitles, or export the video offline.
 
 ## License
 
