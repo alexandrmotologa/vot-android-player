@@ -75,6 +75,12 @@ class VotPlayerManager(
     private val dataSourceFactory = DefaultDataSource.Factory(context)
 
     init {
+        val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
+            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+        videoPlayer.setAudioAttributes(audioAttributes, true)
+
         videoPlayer.volume = _originalVolume.value
         voiceoverPlayer.volume = _voiceoverVolume.value
 
