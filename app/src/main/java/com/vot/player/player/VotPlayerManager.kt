@@ -189,6 +189,19 @@ class VotPlayerManager(
         voiceoverPlayer.playWhenReady = true
     }
 
+    fun setVoiceoverAudio(audioUrl: String?) {
+        currentVoiceoverAudioUrl = audioUrl
+        if (!audioUrl.isNullOrEmpty()) {
+            val audioItem = MediaItem.fromUri(audioUrl)
+            voiceoverPlayer.setMediaItem(audioItem)
+            voiceoverPlayer.prepare()
+            if (_isPlaying.value) {
+                voiceoverPlayer.playWhenReady = true
+                voiceoverPlayer.play()
+            }
+        }
+    }
+
     private fun setupVideoSource(videoUrl: String, audioUrl: String?, metadata: MediaMetadata) {
         val mediaItem = MediaItem.Builder()
             .setUri(videoUrl)
@@ -230,30 +243,42 @@ class VotPlayerManager(
             metadata = metadata
         )
         seekTo(currentPos)
-        if (wasPlaying) {
-            play()
-        }
+        if (wasPlaying) play()
     }
 
     fun play() {
-        videoPlayer.play()
+        if (videoPlayer.mediaItemCount > 0) {
+            videoPlayer.play()
+        }
         if (voiceoverPlayer.mediaItemCount > 0) {
+            voiceoverPlayer.playWhenReady = true
             voiceoverPlayer.play()
         }
+        _isPlaying.value = true
     }
 
     fun pause() {
-        videoPlayer.pause()
-        voiceoverPlayer.pause()
+        if (videoPlayer.mediaItemCount > 0) {
+            videoPlayer.pause()
+        }
+        if (voiceoverPlayer.mediaItemCount > 0) {
+            voiceoverPlayer.pause()
+        }
+        _isPlaying.value = false
     }
 
     fun togglePlayPause() {
-        if (videoPlayer.isPlaying) pause() else play()
+        if (_isPlaying.value) pause() else play()
     }
 
     fun seekTo(positionMs: Long) {
-        val target = positionMs.coerceIn(0L, videoPlayer.duration.coerceAtLeast(0L))
-        videoPlayer.seekTo(target)
+        val maxDuration = videoPlayer.duration.takeIf { it > 0L }
+            ?: voiceoverPlayer.duration.takeIf { it > 0L }
+            ?: Long.MAX_VALUE
+        val target = positionMs.coerceIn(0L, maxDuration)
+        if (videoPlayer.mediaItemCount > 0) {
+            videoPlayer.seekTo(target)
+        }
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.seekTo(target)
         }

@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openYouTubeWebView(it) }
                                 },
                                 selectedSubtitles = selectedSubtitles,
                                 onSubtitlesChange = { newSubs ->
@@ -139,15 +139,15 @@ class MainActivity : ComponentActivity() {
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
                                     selectedLanguage = newLang
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openYouTubeWebView(it) }
                                 },
                                 onSwitchToNativePlayer = {
-                                    currentPlayingMode = PlayerMode.NATIVE_PLAYER
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 onNavigateBack = {
                                     playerManager.pause()
                                     activeVideoUrl = null
+                                    currentVideoInfo = null
                                     loadHistory()
                                 },
                                 modifier = Modifier.padding(innerPadding)
@@ -164,19 +164,19 @@ class MainActivity : ComponentActivity() {
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 selectedVoiceGender = selectedVoiceGender,
                                 onVoiceGenderChange = { gender ->
                                     selectedVoiceGender = gender
                                     prefs.preferredVoiceGender = gender.code
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 selectedVoiceActor = selectedVoiceActor,
                                 onVoiceActorChange = { actor ->
                                     selectedVoiceActor = actor
                                     prefs.preferredVoiceActor = actor.voiceId
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 selectedSubtitles = selectedSubtitles,
                                 onSubtitlesChange = { newSubs ->
@@ -186,7 +186,7 @@ class MainActivity : ComponentActivity() {
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
                                     selectedLanguage = newLang
-                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                    activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 isSponsorBlockEnabled = isSponsorBlockEnabled,
                                 onSponsorBlockChange = { enabled ->
@@ -202,6 +202,7 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = {
                                     playerManager.pause()
                                     activeVideoUrl = null
+                                    currentVideoInfo = null
                                     loadHistory()
                                 },
                                 onExportVideo = {
@@ -261,11 +262,14 @@ class MainActivity : ComponentActivity() {
                                 if (rememberChoice) {
                                     prefs.preferredPlayerMode = mode
                                 }
-                                currentPlayingMode = mode
                                 val url = pendingOpenUrl!!
                                 showModeDialog = false
                                 pendingOpenUrl = null
-                                loadVideoAndTranslate(url)
+                                if (mode == PlayerMode.YOUTUBE_WEB) {
+                                    openYouTubeWebView(url)
+                                } else {
+                                    openNativePlayer(url)
+                                }
                             },
                             onDismiss = {
                                 showModeDialog = false
@@ -359,20 +363,119 @@ class MainActivity : ComponentActivity() {
         if (mode == PlayerMode.ASK_EVERY_TIME) {
             pendingOpenUrl = url
             showModeDialog = true
+        } else if (mode == PlayerMode.YOUTUBE_WEB) {
+            openYouTubeWebView(url)
         } else {
-            currentPlayingMode = mode
-            loadVideoAndTranslate(url, requestedStartPositionMs)
+            openNativePlayer(url, requestedStartPositionMs)
         }
     }
 
-    private fun loadVideoAndTranslate(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+    private fun openYouTubeWebView(rawUrl: String) {
+        val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl) ?: ""
+        val webUrl = if (videoId.isNotEmpty()) {
+            "https://m.youtube.com/watch?v=$videoId"
+        } else {
+            rawUrl
+        }
+
+        val info = UniversalVideoInfo(
+            id = videoId.ifEmpty { "yt_${rawUrl.hashCode()}" },
+            rawUrl = rawUrl,
+            title = "YouTube Video",
+            author = "YouTube",
+            durationSeconds = 0L,
+            streamUrl = webUrl,
+            thumbnailUrl = if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else null,
+            platform = PlatformType.YOUTUBE
+        )
+
+        currentPlayingMode = PlayerMode.YOUTUBE_WEB
+        currentVideoInfo = info
+        activeVideoUrl = rawUrl
+        isLoading = true
+        statusMessage = "Loading translation..."
+
+        lifecycleScope.launch {
+            val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
+            val votUrl = if (videoId.isNotEmpty()) "https://www.youtube.com/watch?v=$videoId" else rawUrl
+
+            if (isSponsorBlockEnabled && videoId.isNotEmpty()) {
+                launch {
+                    val segments = sponsorBlockClient.getSkipSegments(videoId)
+                    playerManager.setSponsorSegments(segments)
+                }
+            }
+
+            val votResult = votApiClient.translateVideo(
+                videoUrl = votUrl,
+                durationSeconds = 0.0,
+                targetLang = selectedLanguage,
+                voiceType = selectedVoiceType,
+                preferredVoice = preferredVoiceParam,
+                onProgress = { statusMessage = it }
+            )
+
+            val subtitlesResult = votApiClient.getSubtitles(
+                videoUrl = votUrl,
+                targetLang = selectedLanguage
+            )
+            val cues = subtitlesResult.getOrDefault(emptyList())
+
+            isLoading = false
+            statusMessage = null
+            val audioUrl = votResult.getOrNull()?.url
+            currentTranslatedAudioUrl = audioUrl
+
+            if (!audioUrl.isNullOrEmpty()) {
+                playerManager.setVoiceoverAudio(audioUrl)
+            }
+
+            historyDb.saveOrUpdate(
+                WatchHistoryItem(
+                    videoId = info.id,
+                    url = rawUrl,
+                    title = info.title,
+                    thumbnailUrl = info.thumbnailUrl ?: "",
+                    lastPositionMs = 0L,
+                    durationMs = 0L,
+                    preferredVoice = selectedVoiceType.name.lowercase(),
+                    originalVolume = playerManager.originalVolume.value,
+                    voiceVolume = playerManager.voiceoverVolume.value
+                )
+            )
+            loadHistory()
+        }
+    }
+
+    private fun openNativePlayer(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+        currentPlayingMode = PlayerMode.NATIVE_PLAYER
         activeVideoUrl = rawUrl
         isLoading = true
         statusMessage = "Resolving video stream..."
 
+        val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl)
+        if (videoId != null) {
+            currentVideoInfo = UniversalVideoInfo(
+                id = videoId,
+                rawUrl = rawUrl,
+                title = "YouTube Video",
+                author = "YouTube",
+                durationSeconds = 0L,
+                streamUrl = "",
+                thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                platform = PlatformType.YOUTUBE
+            )
+        }
+
         lifecycleScope.launch {
             val streamResult = streamExtractor.extract(rawUrl)
             if (streamResult.isFailure) {
+                if (videoId != null) {
+                    statusMessage = "Direct stream restricted. Switching to YouTube Web View..."
+                    kotlinx.coroutines.delay(1200)
+                    openYouTubeWebView(rawUrl)
+                    return@launch
+                }
                 isLoading = false
                 statusMessage = "Error: ${streamResult.exceptionOrNull()?.message}"
                 return@launch
@@ -382,7 +485,6 @@ class MainActivity : ComponentActivity() {
             currentVideoInfo = videoInfo
             statusMessage = "Requesting AI voice-over translation..."
 
-            // SponsorBlock: fetch skip segments if YouTube
             if (isSponsorBlockEnabled && videoInfo.platform == PlatformType.YOUTUBE) {
                 launch {
                     val segments = sponsorBlockClient.getSkipSegments(videoInfo.id)
@@ -390,7 +492,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Check resume position
             val resumePositionMs = if (requestedStartPositionMs > 0L) {
                 requestedStartPositionMs
             } else {
@@ -398,9 +499,7 @@ class MainActivity : ComponentActivity() {
                 existing?.lastPositionMs ?: 0L
             }
 
-            // Prepare voice parameter (specific actor ID or gender)
             val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
-
             val votUrl = if (videoInfo.platform == PlatformType.YOUTUBE) {
                 "https://www.youtube.com/watch?v=${videoInfo.id}"
             } else {
@@ -416,7 +515,6 @@ class MainActivity : ComponentActivity() {
                 onProgress = { statusMessage = it }
             )
 
-            // Subtitles
             val subtitlesResult = votApiClient.getSubtitles(
                 videoUrl = votUrl,
                 targetLang = selectedLanguage
@@ -429,7 +527,6 @@ class MainActivity : ComponentActivity() {
             val translatedAudioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = translatedAudioUrl
 
-            // Save to database
             historyDb.saveOrUpdate(
                 WatchHistoryItem(
                     videoId = videoInfo.id,
