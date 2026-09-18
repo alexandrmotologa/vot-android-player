@@ -16,18 +16,23 @@ import androidx.lifecycle.lifecycleScope
 import com.vot.player.data.db.WatchHistoryDatabase
 import com.vot.player.data.db.WatchHistoryItem
 import com.vot.player.data.extractor.MultiPlatformExtractor
-import com.vot.player.data.model.PlatformType
-import com.vot.player.data.model.SubtitlesMode
-import com.vot.player.data.model.TargetLanguage
-import com.vot.player.data.model.UniversalVideoInfo
-import com.vot.player.data.model.VoiceType
+import com.vot.player.data.model.*
+import com.vot.player.data.pref.PlayerMode
+import com.vot.player.data.pref.PlayerPreferences
+import com.vot.player.data.sponsorblock.SponsorBlockClient
+import com.vot.player.data.update.AppUpdateInfo
+import com.vot.player.data.update.UpdateChecker
 import com.vot.player.data.vot.VotApiClient
+import com.vot.player.data.youtube.YouTubeStreamExtractor
 import com.vot.player.export.ExportState
 import com.vot.player.export.VotExportManager
 import com.vot.player.player.VotPlayerManager
 import com.vot.player.ui.HistoryScreen
 import com.vot.player.ui.PlayerScreen
+import com.vot.player.ui.YouTubeWebScreen
 import com.vot.player.ui.components.ExportProgressDialog
+import com.vot.player.ui.components.PlayerModeDialog
+import com.vot.player.ui.components.SettingsDialog
 import com.vot.player.ui.theme.DarkBackground
 import com.vot.player.ui.theme.VotPlayerTheme
 import kotlinx.coroutines.launch
@@ -41,8 +46,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var playerManager: VotPlayerManager
     private lateinit var historyDb: WatchHistoryDatabase
     private lateinit var exportManager: VotExportManager
+    private lateinit var prefs: PlayerPreferences
+
     private val streamExtractor = MultiPlatformExtractor()
     private val votApiClient = VotApiClient()
+    private val sponsorBlockClient = SponsorBlockClient()
+    private val updateChecker = UpdateChecker()
 
     private var activeVideoUrl by mutableStateOf<String?>(null)
     private var currentVideoInfo by mutableStateOf<UniversalVideoInfo?>(null)
@@ -51,14 +60,29 @@ class MainActivity : ComponentActivity() {
     private var historyList by mutableStateOf<List<WatchHistoryItem>>(emptyList())
 
     private var selectedVoiceType by mutableStateOf(VoiceType.STANDARD)
+    private var selectedVoiceGender by mutableStateOf(VoiceGender.AUTO)
+    private var selectedVoiceActor by mutableStateOf(VoiceActor.AUTO)
     private var selectedSubtitles by mutableStateOf(SubtitlesMode.OFF)
     private var selectedLanguage by mutableStateOf(TargetLanguage.RUSSIAN)
+    private var isSponsorBlockEnabled by mutableStateOf(true)
+
     private var currentTranslatedAudioUrl by mutableStateOf<String?>(null)
+    private var currentPlayingMode by mutableStateOf(PlayerMode.NATIVE_PLAYER)
+    private var pendingOpenUrl by mutableStateOf<String?>(null)
+    private var showModeDialog by mutableStateOf(false)
+    private var showSettingsFromHome by mutableStateOf(false)
+    private var appUpdateInfo by mutableStateOf<AppUpdateInfo?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = PlayerPreferences.getInstance(this)
         historyDb = WatchHistoryDatabase.getInstance(this)
         exportManager = VotExportManager(this)
+
+        // Load preferences
+        isSponsorBlockEnabled = prefs.isSponsorBlockEnabled
+        selectedVoiceGender = VoiceGender.values().firstOrNull { it.code == prefs.preferredVoiceGender } ?: VoiceGender.AUTO
+        selectedVoiceActor = VoiceActor.values().firstOrNull { it.voiceId == prefs.preferredVoiceActor } ?: VoiceActor.AUTO
 
         playerManager = VotPlayerManager(
             context = this,
@@ -69,8 +93,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         )
+        playerManager.setSponsorBlockEnabled(isSponsorBlockEnabled)
 
         loadHistory()
+        checkUpdates()
         handleIntent(intent)
 
         setContent {
@@ -90,50 +116,128 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     if (activeVideoUrl != null && currentVideoInfo != null) {
                         val info = currentVideoInfo!!
-                        PlayerScreen(
-                            playerManager = playerManager,
-                            videoTitle = info.title,
-                            videoAuthor = info.author,
-                            statusMessage = statusMessage,
-                            isLoading = isLoading,
-                            selectedVoiceType = selectedVoiceType,
-                            onVoiceTypeChange = { newVoice ->
-                                selectedVoiceType = newVoice
-                                activeVideoUrl?.let { loadVideoAndTranslate(it) }
-                            },
-                            selectedSubtitles = selectedSubtitles,
-                            onSubtitlesChange = { newSubs ->
-                                selectedSubtitles = newSubs
-                                playerManager.setSubtitlesEnabled(newSubs == SubtitlesMode.RUSSIAN)
-                            },
-                            selectedLanguage = selectedLanguage,
-                            onLanguageChange = { newLang ->
-                                selectedLanguage = newLang
-                                activeVideoUrl?.let { loadVideoAndTranslate(it) }
-                            },
-                            onEnterPiP = { enterPictureInPicture() },
-                            onNavigateBack = {
-                                playerManager.pause()
-                                activeVideoUrl = null
-                                loadHistory()
-                            },
-                            onExportVideo = {
-                                lifecycleScope.launch {
-                                    showExportDialog = true
-                                    exportManager.exportVideo(
-                                        videoUrl = info.streamUrl,
-                                        audioUrl = currentTranslatedAudioUrl,
-                                        title = info.title
-                                    )
-                                }
-                            },
-                            modifier = Modifier.padding(innerPadding)
-                        )
+
+                        if (currentPlayingMode == PlayerMode.YOUTUBE_WEB) {
+                            // Mode 2: YouTube Web View with comments
+                            val webUrl = if (info.platform == PlatformType.YOUTUBE) {
+                                "https://m.youtube.com/watch?v=${info.id}"
+                            } else info.rawUrl
+
+                            YouTubeWebScreen(
+                                videoUrl = webUrl,
+                                playerManager = playerManager,
+                                selectedVoiceType = selectedVoiceType,
+                                onVoiceTypeChange = { newVoice ->
+                                    selectedVoiceType = newVoice
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                selectedSubtitles = selectedSubtitles,
+                                onSubtitlesChange = { newSubs ->
+                                    selectedSubtitles = newSubs
+                                    playerManager.setSubtitlesEnabled(newSubs == SubtitlesMode.RUSSIAN)
+                                },
+                                selectedLanguage = selectedLanguage,
+                                onLanguageChange = { newLang ->
+                                    selectedLanguage = newLang
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                onSwitchToNativePlayer = {
+                                    currentPlayingMode = PlayerMode.NATIVE_PLAYER
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                onNavigateBack = {
+                                    playerManager.pause()
+                                    activeVideoUrl = null
+                                    loadHistory()
+                                },
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                        } else {
+                            // Mode 1: Native Player
+                            PlayerScreen(
+                                playerManager = playerManager,
+                                videoTitle = info.title,
+                                videoAuthor = info.author,
+                                thumbnailUrl = info.thumbnailUrl,
+                                statusMessage = statusMessage,
+                                isLoading = isLoading,
+                                selectedVoiceType = selectedVoiceType,
+                                onVoiceTypeChange = { newVoice ->
+                                    selectedVoiceType = newVoice
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                selectedVoiceGender = selectedVoiceGender,
+                                onVoiceGenderChange = { gender ->
+                                    selectedVoiceGender = gender
+                                    prefs.preferredVoiceGender = gender.code
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                selectedVoiceActor = selectedVoiceActor,
+                                onVoiceActorChange = { actor ->
+                                    selectedVoiceActor = actor
+                                    prefs.preferredVoiceActor = actor.voiceId
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                selectedSubtitles = selectedSubtitles,
+                                onSubtitlesChange = { newSubs ->
+                                    selectedSubtitles = newSubs
+                                    playerManager.setSubtitlesEnabled(newSubs == SubtitlesMode.RUSSIAN)
+                                },
+                                selectedLanguage = selectedLanguage,
+                                onLanguageChange = { newLang ->
+                                    selectedLanguage = newLang
+                                    activeVideoUrl?.let { loadVideoAndTranslate(it, playerManager.currentPositionMs.value) }
+                                },
+                                isSponsorBlockEnabled = isSponsorBlockEnabled,
+                                onSponsorBlockChange = { enabled ->
+                                    isSponsorBlockEnabled = enabled
+                                    prefs.isSponsorBlockEnabled = enabled
+                                    playerManager.setSponsorBlockEnabled(enabled)
+                                },
+                                preferredPlayerMode = prefs.preferredPlayerMode,
+                                onPlayerModeChange = { mode ->
+                                    prefs.preferredPlayerMode = mode
+                                },
+                                onEnterPiP = { enterPictureInPicture() },
+                                onNavigateBack = {
+                                    playerManager.pause()
+                                    activeVideoUrl = null
+                                    loadHistory()
+                                },
+                                onExportVideo = {
+                                    lifecycleScope.launch {
+                                        showExportDialog = true
+                                        exportManager.exportVideo(
+                                            videoUrl = info.streamUrl,
+                                            audioUrl = currentTranslatedAudioUrl,
+                                            title = info.title
+                                        )
+                                    }
+                                },
+                                onExportAudio = {
+                                    if (!currentTranslatedAudioUrl.isNullOrEmpty()) {
+                                        lifecycleScope.launch {
+                                            showExportDialog = true
+                                            exportManager.exportAudioOnly(
+                                                audioUrl = currentTranslatedAudioUrl!!,
+                                                title = info.title,
+                                                author = info.author
+                                            )
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                        }
                     } else {
+                        // Home & Watch History Screen
                         HistoryScreen(
                             historyItems = historyList,
+                            updateInfo = appUpdateInfo,
+                            onDownloadUpdate = { updateChecker.downloadUpdate(this@MainActivity, it) },
+                            onOpenSettings = { showSettingsFromHome = true },
                             onPlayUrl = { url, startPos ->
-                                loadVideoAndTranslate(url, startPos)
+                                onUrlTriggered(url, startPos)
                             },
                             onDeleteItem = { videoId ->
                                 lifecycleScope.launch {
@@ -150,6 +254,62 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // Mode Choice Dialog (Native Player vs YouTube Web View)
+                    if (showModeDialog && pendingOpenUrl != null) {
+                        PlayerModeDialog(
+                            onSelectMode = { mode, rememberChoice ->
+                                if (rememberChoice) {
+                                    prefs.preferredPlayerMode = mode
+                                }
+                                currentPlayingMode = mode
+                                val url = pendingOpenUrl!!
+                                showModeDialog = false
+                                pendingOpenUrl = null
+                                loadVideoAndTranslate(url)
+                            },
+                            onDismiss = {
+                                showModeDialog = false
+                                pendingOpenUrl = null
+                            }
+                        )
+                    }
+
+                    // Home Settings Dialog
+                    if (showSettingsFromHome) {
+                        SettingsDialog(
+                            selectedVoiceType = selectedVoiceType,
+                            onVoiceTypeChange = { selectedVoiceType = it },
+                            selectedVoiceGender = selectedVoiceGender,
+                            onVoiceGenderChange = { gender ->
+                                selectedVoiceGender = gender
+                                prefs.preferredVoiceGender = gender.code
+                            },
+                            selectedVoiceActor = selectedVoiceActor,
+                            onVoiceActorChange = { actor ->
+                                selectedVoiceActor = actor
+                                prefs.preferredVoiceActor = actor.voiceId
+                            },
+                            selectedSubtitles = selectedSubtitles,
+                            onSubtitlesChange = { selectedSubtitles = it },
+                            selectedLanguage = selectedLanguage,
+                            onLanguageChange = { selectedLanguage = it },
+                            currentSpeed = playerManager.playbackSpeed.value,
+                            onSpeedChange = { playerManager.setPlaybackSpeed(it) },
+                            isSponsorBlockEnabled = isSponsorBlockEnabled,
+                            onSponsorBlockChange = { enabled ->
+                                isSponsorBlockEnabled = enabled
+                                prefs.isSponsorBlockEnabled = enabled
+                                playerManager.setSponsorBlockEnabled(enabled)
+                            },
+                            isAudioOnly = playerManager.isAudioOnly.value,
+                            onToggleAudioOnly = { playerManager.toggleAudioOnly() },
+                            preferredPlayerMode = prefs.preferredPlayerMode,
+                            onPlayerModeChange = { mode -> prefs.preferredPlayerMode = mode },
+                            onDismiss = { showSettingsFromHome = false }
+                        )
+                    }
+
+                    // Export / Download Dialog
                     if (showExportDialog && exportState !is ExportState.Idle) {
                         ExportProgressDialog(
                             exportState = exportState,
@@ -162,6 +322,15 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    private fun checkUpdates() {
+        lifecycleScope.launch {
+            val res = updateChecker.checkForUpdates()
+            if (res.isSuccess) {
+                appUpdateInfo = res.getOrNull()
             }
         }
     }
@@ -181,7 +350,18 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val url = intent?.getStringExtra(EXTRA_VIDEO_URL)
         if (url != null) {
-            loadVideoAndTranslate(url)
+            onUrlTriggered(url)
+        }
+    }
+
+    private fun onUrlTriggered(url: String, requestedStartPositionMs: Long = 0L) {
+        val mode = prefs.preferredPlayerMode
+        if (mode == PlayerMode.ASK_EVERY_TIME) {
+            pendingOpenUrl = url
+            showModeDialog = true
+        } else {
+            currentPlayingMode = mode
+            loadVideoAndTranslate(url, requestedStartPositionMs)
         }
     }
 
@@ -202,7 +382,15 @@ class MainActivity : ComponentActivity() {
             currentVideoInfo = videoInfo
             statusMessage = "Requesting AI voice-over translation..."
 
-            // Check if we have an existing resume position from history if none explicitly given
+            // SponsorBlock: fetch skip segments if YouTube
+            if (isSponsorBlockEnabled && videoInfo.platform == PlatformType.YOUTUBE) {
+                launch {
+                    val segments = sponsorBlockClient.getSkipSegments(videoInfo.id)
+                    playerManager.setSponsorSegments(segments)
+                }
+            }
+
+            // Check resume position
             val resumePositionMs = if (requestedStartPositionMs > 0L) {
                 requestedStartPositionMs
             } else {
@@ -210,7 +398,9 @@ class MainActivity : ComponentActivity() {
                 existing?.lastPositionMs ?: 0L
             }
 
-            // Request Translation from VOT API
+            // Prepare voice parameter (specific actor ID or gender)
+            val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
+
             val votUrl = if (videoInfo.platform == PlatformType.YOUTUBE) {
                 "https://www.youtube.com/watch?v=${videoInfo.id}"
             } else {
@@ -222,10 +412,11 @@ class MainActivity : ComponentActivity() {
                 durationSeconds = videoInfo.durationSeconds.toDouble(),
                 targetLang = selectedLanguage,
                 voiceType = selectedVoiceType,
+                preferredVoice = preferredVoiceParam,
                 onProgress = { statusMessage = it }
             )
 
-            // Request Subtitles if Russian mode
+            // Subtitles
             val subtitlesResult = votApiClient.getSubtitles(
                 videoUrl = votUrl,
                 targetLang = selectedLanguage

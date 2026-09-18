@@ -44,6 +44,22 @@ enum class VoiceType(val label: String) {
     LIVE_VOICE("Live Voice (Cloned)")
 }
 
+enum class VoiceGender(val label: String, val code: String) {
+    AUTO("Auto Detect", "auto"),
+    MALE("Male Voice", "male"),
+    FEMALE("Female Voice", "female")
+}
+
+enum class VoiceActor(val displayName: String, val voiceId: String, val gender: VoiceGender) {
+    AUTO("Default Actor", "", VoiceGender.AUTO),
+    FILIPP("Filipp (Male)", "filipp", VoiceGender.MALE),
+    ERMIL("Ermil (Male)", "ermil", VoiceGender.MALE),
+    MADIRUS("Madirus (Male)", "madirus", VoiceGender.MALE),
+    ALENA("Alena (Female)", "alena", VoiceGender.FEMALE),
+    OKSANA("Oksana (Female)", "oksana", VoiceGender.FEMALE),
+    JANE("Jane (Female)", "jane", VoiceGender.FEMALE)
+}
+
 enum class TargetLanguage(val code: String, val displayName: String) {
     RUSSIAN("ru", "Russian"),
     ENGLISH("en", "English")

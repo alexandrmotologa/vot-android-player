@@ -6,31 +6,29 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Forward10
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PictureInPictureAlt
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay10
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
-import com.vot.player.data.model.SubtitlesMode
-import com.vot.player.data.model.TargetLanguage
-import com.vot.player.data.model.VoiceType
+import coil.compose.AsyncImage
+import com.vot.player.data.model.*
+import com.vot.player.data.pref.PlayerMode
 import com.vot.player.player.VotPlayerManager
 import com.vot.player.ui.components.DualVolumeBar
 import com.vot.player.ui.components.GestureOverlay
@@ -46,17 +44,27 @@ fun PlayerScreen(
     playerManager: VotPlayerManager,
     videoTitle: String,
     videoAuthor: String,
+    thumbnailUrl: String? = null,
     statusMessage: String?,
     isLoading: Boolean,
     selectedVoiceType: VoiceType,
     onVoiceTypeChange: (VoiceType) -> Unit,
+    selectedVoiceGender: VoiceGender = VoiceGender.AUTO,
+    onVoiceGenderChange: (VoiceGender) -> Unit = {},
+    selectedVoiceActor: VoiceActor = VoiceActor.AUTO,
+    onVoiceActorChange: (VoiceActor) -> Unit = {},
     selectedSubtitles: SubtitlesMode,
     onSubtitlesChange: (SubtitlesMode) -> Unit,
     selectedLanguage: TargetLanguage,
     onLanguageChange: (TargetLanguage) -> Unit,
+    isSponsorBlockEnabled: Boolean = true,
+    onSponsorBlockChange: (Boolean) -> Unit = {},
+    preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
+    onPlayerModeChange: (PlayerMode) -> Unit = {},
     onEnterPiP: () -> Unit,
     onNavigateBack: () -> Unit,
     onExportVideo: () -> Unit,
+    onExportAudio: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isPlaying by playerManager.isPlaying.collectAsState()
@@ -68,6 +76,7 @@ fun PlayerScreen(
     val currentSubtitle by playerManager.currentSubtitle.collectAsState()
     val availableQualities by playerManager.availableQualities.collectAsState()
     val selectedQuality by playerManager.selectedQuality.collectAsState()
+    val isAudioOnly by playerManager.isAudioOnly.collectAsState()
 
     var showControls by remember { mutableStateOf(true) }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -134,7 +143,7 @@ fun PlayerScreen(
                 } else false
             }
     ) {
-        // Video Surface
+        // Video Surface or Audio-Only Podcast View
         GestureOverlay(
             originalVolume = originalVolume,
             voiceoverVolume = voiceoverVolume,
@@ -143,15 +152,92 @@ fun PlayerScreen(
             onSeekRelative = { playerManager.seekRelative(it) },
             onToggleControls = { showControls = !showControls }
         ) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = playerManager.videoPlayer
-                        useController = false
+            if (isAudioOnly) {
+                // Podcast Visualizer View
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF101018)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            shadowElevation = 12.dp,
+                            modifier = Modifier.size(220.dp)
+                        ) {
+                            if (!thumbnailUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = thumbnailUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF222233)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Headphones,
+                                        contentDescription = null,
+                                        tint = AccentRed,
+                                        modifier = Modifier.size(64.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Surface(
+                            color = AccentRed.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Headphones, contentDescription = null, tint = AccentRed, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("AUDIO-ONLY / PODCAST (90% DATA SAVED)", color = AccentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = videoTitle,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = videoAuthor,
+                            color = TextSecondary,
+                            fontSize = 14.sp
+                        )
                     }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+                }
+            } else {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = playerManager.videoPlayer
+                            useController = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         // Subtitle Overlay
@@ -170,7 +256,7 @@ fun PlayerScreen(
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .background(Color(0xCC111118), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(Color(0xCC111118), RoundedCornerShape(12.dp))
                     .padding(20.dp)
             ) {
                 if (isLoading) {
@@ -237,6 +323,13 @@ fun PlayerScreen(
                     }
 
                     Row {
+                        IconButton(onClick = { playerManager.toggleAudioOnly() }) {
+                            Icon(
+                                imageVector = Icons.Default.Headphones,
+                                contentDescription = "Audio-Only Mode",
+                                tint = if (isAudioOnly) AccentRed else Color.White
+                            )
+                        }
                         IconButton(onClick = onEnterPiP) {
                             Icon(
                                 imageVector = Icons.Default.PictureInPictureAlt,
@@ -276,7 +369,7 @@ fun PlayerScreen(
                         onClick = { playerManager.togglePlayPause() },
                         modifier = Modifier
                             .size(68.dp)
-                            .background(Color(0x80000000), androidx.compose.foundation.shape.CircleShape)
+                            .background(Color(0x80000000), CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -355,6 +448,10 @@ fun PlayerScreen(
             SettingsDialog(
                 selectedVoiceType = selectedVoiceType,
                 onVoiceTypeChange = onVoiceTypeChange,
+                selectedVoiceGender = selectedVoiceGender,
+                onVoiceGenderChange = onVoiceGenderChange,
+                selectedVoiceActor = selectedVoiceActor,
+                onVoiceActorChange = onVoiceActorChange,
                 selectedSubtitles = selectedSubtitles,
                 onSubtitlesChange = onSubtitlesChange,
                 selectedLanguage = selectedLanguage,
@@ -364,7 +461,14 @@ fun PlayerScreen(
                 availableQualities = availableQualities,
                 selectedQuality = selectedQuality,
                 onQualityChange = { playerManager.changeQuality(it) },
-                onExportClick = onExportVideo,
+                isSponsorBlockEnabled = isSponsorBlockEnabled,
+                onSponsorBlockChange = onSponsorBlockChange,
+                isAudioOnly = isAudioOnly,
+                onToggleAudioOnly = { playerManager.toggleAudioOnly() },
+                preferredPlayerMode = preferredPlayerMode,
+                onPlayerModeChange = onPlayerModeChange,
+                onExportVideoClick = onExportVideo,
+                onExportAudioClick = onExportAudio,
                 onDismiss = { showSettingsDialog = false }
             )
         }

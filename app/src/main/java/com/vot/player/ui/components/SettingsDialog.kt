@@ -1,28 +1,15 @@
 package com.vot.player.ui.components
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,10 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.vot.player.data.model.SubtitlesMode
-import com.vot.player.data.model.TargetLanguage
-import com.vot.player.data.model.VideoQuality
-import com.vot.player.data.model.VoiceType
+import com.vot.player.data.model.*
+import com.vot.player.data.pref.PlayerMode
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.DarkCard
 import com.vot.player.ui.theme.TextPrimary
@@ -44,6 +29,10 @@ import com.vot.player.ui.theme.TextSecondary
 fun SettingsDialog(
     selectedVoiceType: VoiceType,
     onVoiceTypeChange: (VoiceType) -> Unit,
+    selectedVoiceGender: VoiceGender = VoiceGender.AUTO,
+    onVoiceGenderChange: (VoiceGender) -> Unit = {},
+    selectedVoiceActor: VoiceActor = VoiceActor.AUTO,
+    onVoiceActorChange: (VoiceActor) -> Unit = {},
     selectedSubtitles: SubtitlesMode,
     onSubtitlesChange: (SubtitlesMode) -> Unit,
     selectedLanguage: TargetLanguage,
@@ -53,7 +42,14 @@ fun SettingsDialog(
     availableQualities: List<VideoQuality> = emptyList(),
     selectedQuality: VideoQuality? = null,
     onQualityChange: (VideoQuality) -> Unit = {},
-    onExportClick: () -> Unit = {},
+    isSponsorBlockEnabled: Boolean = true,
+    onSponsorBlockChange: (Boolean) -> Unit = {},
+    isAudioOnly: Boolean = false,
+    onToggleAudioOnly: () -> Unit = {},
+    preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
+    onPlayerModeChange: (PlayerMode) -> Unit = {},
+    onExportVideoClick: () -> Unit = {},
+    onExportAudioClick: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -78,33 +74,121 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Video Resolution / Quality (1080p / 720p / 480p / 360p)
-                if (availableQualities.isNotEmpty()) {
-                    Text(text = "Video Quality", color = TextSecondary, fontSize = 13.sp)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        availableQualities.take(4).forEach { quality ->
-                            FilterChip(
-                                selected = selectedQuality?.height == quality.height,
-                                onClick = { onQualityChange(quality) },
-                                label = { Text(quality.label) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AccentRed,
-                                    selectedLabelColor = Color.White
-                                )
+                // Default Player Mode
+                Text(text = "Default Watching Mode", color = TextSecondary, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    PlayerMode.values().forEach { mode ->
+                        FilterChip(
+                            selected = preferredPlayerMode == mode,
+                            onClick = { onPlayerModeChange(mode) },
+                            label = { Text(if (mode == PlayerMode.ASK_EVERY_TIME) "Ask" else mode.displayName.take(10)) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AccentRed,
+                                selectedLabelColor = Color.White
                             )
-                        }
+                        )
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = Color(0x22FFFFFF))
-                    Spacer(modifier = Modifier.height(14.dp))
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0x22FFFFFF))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Podcast / Audio-Only Mode Switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Headphones, contentDescription = null, tint = AccentRed, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Audio-Only Mode", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Text(text = "Save 90% battery & data by turning off video", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = isAudioOnly,
+                        onCheckedChange = { onToggleAudioOnly() },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRed)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0x22FFFFFF))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // SponsorBlock Switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "SponsorBlock (Auto-Skip)", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = "Automatically jump over sponsors and intros", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = isSponsorBlockEnabled,
+                        onCheckedChange = { onSponsorBlockChange(it) },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AccentRed)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0x22FFFFFF))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Voice Gender Selection
+                Text(text = "Voice Gender", color = TextSecondary, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    VoiceGender.values().forEach { gender ->
+                        FilterChip(
+                            selected = selectedVoiceGender == gender,
+                            onClick = { onVoiceGenderChange(gender) },
+                            label = { Text(gender.label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AccentRed,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Specific Voice Actor
+                Text(text = "Preferred Voice Actor", color = TextSecondary, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    VoiceActor.values().take(4).forEach { actor ->
+                        FilterChip(
+                            selected = selectedVoiceActor == actor,
+                            onClick = { onVoiceActorChange(actor) },
+                            label = { Text(actor.displayName.substringBefore(" ")) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AccentRed,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0x22FFFFFF))
+                Spacer(modifier = Modifier.height(14.dp))
+
                 // Voice Type (Standard vs Live Voice)
-                Text(text = "Voice Synthesis Type", color = TextSecondary, fontSize = 13.sp)
+                Text(text = "Voice Synthesis Engine", color = TextSecondary, fontSize = 13.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -149,29 +233,6 @@ fun SettingsDialog(
                 HorizontalDivider(color = Color(0x22FFFFFF))
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Target Language
-                Text(text = "Translation Language", color = TextSecondary, fontSize = 13.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TargetLanguage.values().forEach { lang ->
-                        FilterChip(
-                            selected = selectedLanguage == lang,
-                            onClick = { onLanguageChange(lang) },
-                            label = { Text(lang.displayName) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AccentRed,
-                                selectedLabelColor = Color.White
-                            )
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-                HorizontalDivider(color = Color(0x22FFFFFF))
-                Spacer(modifier = Modifier.height(14.dp))
-
                 // Playback Speed
                 Text(text = "Playback Speed", color = TextSecondary, fontSize = 13.sp)
                 Row(
@@ -191,29 +252,43 @@ fun SettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-                // Offline Export Button
+                // Offline Export Buttons (MP4 & MP3)
+                Text(text = "Offline Downloads", color = TextSecondary, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+
                 Button(
                     onClick = {
-                        onExportClick()
+                        onExportVideoClick()
                         onDismiss()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50)),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                    Text("Save Video Offline (Export MP4)", color = Color.White, fontSize = 14.sp)
+                    Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Export Video (MP4 in Downloads)", color = Color.White, fontSize = 13.sp)
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        onExportAudioClick()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E4053)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Audiotrack, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Export Audio Only (MP3 in Music)", color = Color.White, fontSize = 13.sp)
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

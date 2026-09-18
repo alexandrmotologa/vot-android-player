@@ -12,11 +12,13 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.common.C
 import androidx.media3.session.MediaSession
 import com.vot.player.MainActivity
 import com.vot.player.data.model.SubtitleCue
 import com.vot.player.data.model.UniversalVideoInfo
 import com.vot.player.data.model.VideoQuality
+import com.vot.player.data.sponsorblock.SponsorSegment
 import com.vot.player.service.VotMediaService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +67,13 @@ class VotPlayerManager(
 
     private val _selectedQuality = MutableStateFlow<VideoQuality?>(null)
     val selectedQuality: StateFlow<VideoQuality?> = _selectedQuality.asStateFlow()
+
+    private val _isAudioOnly = MutableStateFlow(false)
+    val isAudioOnly: StateFlow<Boolean> = _isAudioOnly.asStateFlow()
+
+    private var sponsorSegments: List<SponsorSegment> = emptyList()
+    private var isSponsorBlockEnabled: Boolean = true
+    var onSponsorSkipped: ((category: String) -> Unit)? = null
 
     private var currentVideoInfo: UniversalVideoInfo? = null
     private var currentVoiceoverAudioUrl: String? = null
@@ -304,6 +313,23 @@ class VotPlayerManager(
         _currentSubtitle.value = match?.text
     }
 
+    fun setSponsorSegments(segments: List<SponsorSegment>) {
+        sponsorSegments = segments
+    }
+
+    fun setSponsorBlockEnabled(enabled: Boolean) {
+        isSponsorBlockEnabled = enabled
+    }
+
+    fun toggleAudioOnly() {
+        val nextState = !_isAudioOnly.value
+        _isAudioOnly.value = nextState
+        videoPlayer.trackSelectionParameters = videoPlayer.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, nextState)
+            .build()
+    }
+
     private fun startSyncLoop() {
         syncJob?.cancel()
         syncJob = scope.launch(Dispatchers.Main) {
@@ -313,6 +339,15 @@ class VotPlayerManager(
                     val vPos = videoPlayer.currentPosition
                     _currentPositionMs.value = vPos
                     updateSubtitles(vPos)
+
+                    // Auto-skip SponsorBlock segments
+                    if (isSponsorBlockEnabled && sponsorSegments.isNotEmpty()) {
+                        val segment = sponsorSegments.firstOrNull { vPos in it.startTimeMs..(it.endTimeMs - 500L) }
+                        if (segment != null) {
+                            seekTo(segment.endTimeMs)
+                            onSponsorSkipped?.invoke(segment.category)
+                        }
+                    }
 
                     // Resync voiceover if drifted by more than 80ms
                     if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {

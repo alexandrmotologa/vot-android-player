@@ -113,6 +113,7 @@ class VotApiClient(
         durationSeconds: Double,
         targetLang: TargetLanguage = TargetLanguage.RUSSIAN,
         voiceType: VoiceType = VoiceType.STANDARD,
+        preferredVoice: String = "",
         onProgress: ((String) -> Unit)? = null
     ): Result<VotTranslationResult> = withContext(Dispatchers.IO) {
         try {
@@ -133,7 +134,8 @@ class VotApiClient(
                     responseLang = targetLang.code,
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
-                    useLivelyVoice = voiceType == VoiceType.LIVE_VOICE
+                    useLivelyVoice = voiceType == VoiceType.LIVE_VOICE,
+                    selectedVoice = preferredVoice
                 )
                 firstRequest = false
 

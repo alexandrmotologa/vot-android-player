@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +41,9 @@ import java.util.Locale
 @Composable
 fun HistoryScreen(
     historyItems: List<WatchHistoryItem>,
+    updateInfo: com.vot.player.data.update.AppUpdateInfo? = null,
+    onDownloadUpdate: (com.vot.player.data.update.AppUpdateInfo) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onPlayUrl: (url: String, startPositionMs: Long) -> Unit,
     onDeleteItem: (videoId: String) -> Unit,
     onClearAll: () -> Unit
@@ -82,17 +86,66 @@ fun HistoryScreen(
                             fontSize = 12.sp
                         )
                     }
-                    Surface(
-                        color = AccentRed.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(8.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = AccentRed.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "PRO",
+                                color = AccentRed,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(
+                                androidx.compose.material.icons.Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+
+                // In-App Update Banner
+                if (updateInfo != null) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B3A4B)),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "PRO",
-                            color = AccentRed,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Update Available: v${updateInfo.versionName}",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = updateInfo.releaseNotes.take(60),
+                                    color = Color(0xFFB0BEC5),
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            Button(
+                                onClick = { onDownloadUpdate(updateInfo) },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 

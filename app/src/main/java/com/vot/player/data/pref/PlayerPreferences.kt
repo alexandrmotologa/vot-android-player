@@ -1,0 +1,60 @@
+package com.vot.player.data.pref
+
+import android.content.Context
+import android.content.SharedPreferences
+
+enum class PlayerMode(val displayName: String, val description: String) {
+    ASK_EVERY_TIME("Ask every time", "Prompt to choose between Native and Web player"),
+    NATIVE_PLAYER("Native Player", "Ad-free minimalist player with 4K, PiP and gesture controls"),
+    YOUTUBE_WEB("YouTube Web View", "Full YouTube interface with comments, likes and account sign-in")
+}
+
+class PlayerPreferences(context: Context) {
+    private val prefs: SharedPreferences = context.getSharedPreferences("vot_player_prefs", Context.MODE_PRIVATE)
+
+    companion object {
+        private const val KEY_PLAYER_MODE = "pref_player_mode"
+        private const val KEY_SPONSOR_BLOCK = "pref_sponsor_block"
+        private const val KEY_AUDIO_ONLY = "pref_audio_only"
+        private const val KEY_VOICE_GENDER = "pref_voice_gender"
+        private const val KEY_VOICE_ACTOR = "pref_voice_actor"
+
+        @Volatile
+        private var instance: PlayerPreferences? = null
+
+        fun getInstance(context: Context): PlayerPreferences {
+            return instance ?: synchronized(this) {
+                instance ?: PlayerPreferences(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+
+    var preferredPlayerMode: PlayerMode
+        get() {
+            val name = prefs.getString(KEY_PLAYER_MODE, PlayerMode.ASK_EVERY_TIME.name)
+            return try {
+                PlayerMode.valueOf(name ?: PlayerMode.ASK_EVERY_TIME.name)
+            } catch (_: Exception) {
+                PlayerMode.ASK_EVERY_TIME
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_PLAYER_MODE, value.name).apply()
+        }
+
+    var isSponsorBlockEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SPONSOR_BLOCK, true)
+        set(value) = prefs.edit().putBoolean(KEY_SPONSOR_BLOCK, value).apply()
+
+    var isAudioOnlyDefault: Boolean
+        get() = prefs.getBoolean(KEY_AUDIO_ONLY, false)
+        set(value) = prefs.edit().putBoolean(KEY_AUDIO_ONLY, value).apply()
+
+    var preferredVoiceGender: String
+        get() = prefs.getString(KEY_VOICE_GENDER, "auto") ?: "auto"
+        set(value) = prefs.edit().putString(KEY_VOICE_GENDER, value).apply()
+
+    var preferredVoiceActor: String
+        get() = prefs.getString(KEY_VOICE_ACTOR, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_VOICE_ACTOR, value).apply()
+}

@@ -4,6 +4,11 @@ Native Android video player that brings automated Voice-Over-Translation (VOT) t
 
 ## Features
 
+- Dual player modes: switch between the clean native player (PiP, gesture controls, ad-free) and the YouTube web view (read comments, like, subscribe, and browse recommendations with synchronized voice-over audio).
+- Voice gender and actor selector: switch between Auto detection, Male voices (Filipp, Ermil), and Female voices (Alena, Oksana) for speaker-appropriate translation.
+- Podcast / Audio-Only mode: disables video rendering to cut bandwidth and battery usage, displaying an audio wave visualizer, with an option to export translated tracks as MP3 files to `Music/VOT`.
+- SponsorBlock integration: automatically skips sponsored segments, paid promotions, and intros using the public SponsorBlock community database.
+- In-app update checker: checks GitHub Releases on launch and offers direct one-tap APK installation when a newer release is published.
 - Share-to-play: send video links directly from the YouTube app, mobile browsers, or copy to clipboard for auto-detection.
 - Dual audio mixing: independent volume controls for the original audio track and the translated voice (0% to 100%), with quick presets for voice focus, balanced mix, and original only.
 - Translation modes: toggle between standard translation and Live Voice. Supports translation into Russian and English.
@@ -12,7 +17,7 @@ Native Android video player that brings automated Voice-Over-Translation (VOT) t
 - Watch history & continue watching: local SQLite database tracks watched videos, progress bars, and resume positions.
 - High-resolution video: parses adaptive DASH formats and merges 1080p, 1440p, or 4K video streams with audio in real time.
 - Multi-platform support: extracts and plays videos from YouTube, Twitch VODs/clips, TikTok, Twitter/X, and direct MP4/M3U8 URLs.
-- Offline export: download and save translated videos as standalone MP4 files to device storage (`Downloads/VOT`).
+- Offline export: download and save translated videos as standalone MP4 files (`Downloads/VOT`) or audiobooks as MP3 files (`Music/VOT`).
 - Android TV support: full D-pad remote navigation for smart TVs and TV boxes.
 - Picture-in-Picture (PiP) and background playback: continue watching while using other apps or with the screen turned off.
 - Playback synchronization: dual ExoPlayer instances with periodic clock drift correction and playback speed matching.

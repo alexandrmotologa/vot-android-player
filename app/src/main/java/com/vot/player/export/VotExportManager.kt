@@ -111,6 +111,66 @@ class VotExportManager(
         }
     }
 
+    suspend fun exportAudioOnly(
+        audioUrl: String,
+        title: String,
+        author: String = "VOT"
+    ) = withContext(Dispatchers.IO) {
+        try {
+            _exportState.value = ExportState.Downloading(10, "Preparing audio download...")
+            val safeTitle = title.replace(Regex("[^a-zA-Z0-9_\\-\\s]"), "_").take(50).trim()
+            val tempAudioFile = File(context.cacheDir, "temp_podcast_${System.currentTimeMillis()}.mp3")
+
+            _exportState.value = ExportState.Downloading(20, "Downloading translated MP3...")
+            downloadFile(audioUrl, tempAudioFile) { progress ->
+                _exportState.value = ExportState.Downloading(20 + (progress * 0.7).toInt(), "Downloading audio: $progress%")
+            }
+
+            _exportState.value = ExportState.Muxing("Saving MP3 to Music/VOT...")
+            val fileName = "VOT_${safeTitle}.mp3"
+            val outputUri: Uri?
+            val destinationPath: String
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Audio.Media.TITLE, title)
+                    put(MediaStore.Audio.Media.ARTIST, author)
+                    put(MediaStore.Audio.Media.ALBUM, "VOT Podcasts")
+                    put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+                    put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/VOT")
+                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+                }
+                val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                outputUri = context.contentResolver.insert(collection, values)
+                    ?: throw IllegalStateException("Failed to create MediaStore audio entry")
+
+                context.contentResolver.openOutputStream(outputUri)?.use { outStream ->
+                    tempAudioFile.inputStream().use { inStream ->
+                        inStream.copyTo(outStream)
+                    }
+                }
+
+                values.clear()
+                values.put(MediaStore.Audio.Media.IS_PENDING, 0)
+                context.contentResolver.update(outputUri, values, null, null)
+                destinationPath = "Music/VOT/$fileName"
+            } else {
+                val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                val targetDir = File(musicDir, "VOT").apply { mkdirs() }
+                val targetFile = File(targetDir, fileName)
+                tempAudioFile.copyTo(targetFile, overwrite = true)
+                outputUri = Uri.fromFile(targetFile)
+                destinationPath = targetFile.absolutePath
+            }
+
+            tempAudioFile.delete()
+            _exportState.value = ExportState.Success(outputUri, destinationPath)
+        } catch (e: Exception) {
+            _exportState.value = ExportState.Error(e.message ?: "Audio export failed")
+        }
+    }
+
     private fun downloadFile(url: String, destination: File, onProgress: (Int) -> Unit) {
         val request = Request.Builder().url(url).build()
         val response = client.newCall(request).execute()

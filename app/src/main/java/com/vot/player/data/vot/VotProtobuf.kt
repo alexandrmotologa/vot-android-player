@@ -120,13 +120,17 @@ object VotProtobuf {
         responseLang: String = "ru",
         requestLang: String = "en",
         firstRequest: Boolean = true,
-        useLivelyVoice: Boolean = false
+        useLivelyVoice: Boolean = false,
+        selectedVoice: String = ""
     ): ByteArray {
         val out = ByteArrayOutputStream()
         writeString(out, 3, url)
         writeBool(out, 5, firstRequest)
         writeDouble(out, 6, duration)
         writeString(out, 8, requestLang)
+        if (selectedVoice.isNotEmpty()) {
+            writeString(out, 13, selectedVoice)
+        }
         writeString(out, 14, responseLang)
         writeBool(out, 18, useLivelyVoice)
         return out.toByteArray()
