@@ -184,7 +184,7 @@ class MainActivity : ComponentActivity() {
                                 selectedSubtitles = selectedSubtitles,
                                 onSubtitlesChange = { newSubs ->
                                     selectedSubtitles = newSubs
-                                    playerManager.setSubtitlesEnabled(newSubs == SubtitlesMode.RUSSIAN)
+                                    playerManager.setSubtitlesEnabled(newSubs != SubtitlesMode.OFF)
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
@@ -297,7 +297,10 @@ class MainActivity : ComponentActivity() {
                                 prefs.preferredVoiceActor = actor.voiceId
                             },
                             selectedSubtitles = selectedSubtitles,
-                            onSubtitlesChange = { selectedSubtitles = it },
+                            onSubtitlesChange = { 
+                                selectedSubtitles = it
+                                playerManager.setSubtitlesEnabled(it != SubtitlesMode.OFF)
+                            },
                             selectedLanguage = selectedLanguage,
                             onLanguageChange = { selectedLanguage = it },
                             currentSpeed = playerManager.playbackSpeed.value,
@@ -433,6 +436,9 @@ class MainActivity : ComponentActivity() {
                 statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
             }
 
+            playerManager.setSubtitles(cues)
+            playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
+
             if (!audioUrl.isNullOrEmpty()) {
                 playerManager.setVoiceoverAudio(audioUrl)
             }
@@ -525,6 +531,9 @@ class MainActivity : ComponentActivity() {
                     } else {
                         statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
                     }
+
+                    playerManager.setSubtitles(cues)
+                    playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
 
                     if (!translatedAudioUrl.isNullOrEmpty()) {
                         playerManager.setVoiceoverAudio(translatedAudioUrl)
@@ -621,7 +630,7 @@ class MainActivity : ComponentActivity() {
                 subtitles = cues,
                 startPositionMs = resumePositionMs
             )
-            playerManager.setSubtitlesEnabled(selectedSubtitles == SubtitlesMode.RUSSIAN)
+            playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
         }
     }
 

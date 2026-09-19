@@ -10,7 +10,8 @@ class VotWebBridge(
     private val onSeek: (positionMs: Long) -> Unit,
     private val onTimeUpdate: (positionMs: Long) -> Unit = {},
     private val onRateChange: (rate: Float) -> Unit = {},
-    private val onScreenTap: () -> Unit = {}
+    private val onScreenTap: () -> Unit = {},
+    private val onFullscreenToggle: (Boolean) -> Unit = {}
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -28,7 +29,21 @@ class VotWebBridge(
             ytm-engagement-panel, 
             .ytm-carousel,
             ytm-search-box,
-            .standalone-collection-badge-renderer {
+            .standalone-collection-badge-renderer,
+            ytm-slim-video-action-bar-renderer,
+            ytm-slim-owner-renderer,
+            .slim-video-information-renderer,
+            ytm-video-description-header-renderer,
+            .slim-video-action-bar-actions,
+            ytm-subscribe-button-renderer,
+            ytm-single-column-watch-next-results-renderer,
+            ytm-segmented-like-dislike-button-renderer,
+            ytm-button-renderer,
+            .ytm-video-meta,
+            ytm-reel-shelf-renderer,
+            ytm-ad-slot-renderer,
+            .ad-container,
+            .video-ads {
                 display: none !important;
             }
             body, html {
@@ -98,10 +113,27 @@ class VotWebBridge(
                 findAndHook();
 
                 document.addEventListener('click', function(e) {
-                    if (window.VotAndroidBridge) {
-                        window.VotAndroidBridge.onUserTap();
+                    // Check if clicked fullscreen button inside player
+                    const target = e.target;
+                    const fsBtn = target ? target.closest('.fullscreen-icon, button.ytp-fullscreen-button, button[aria-label*="Full screen"], button[aria-label*="Fullscreen"]') : null;
+                    if (fsBtn) {
+                        if (window.VotAndroidBridge) window.VotAndroidBridge.onFullscreenChanged(true);
+                    } else {
+                        if (window.VotAndroidBridge) {
+                            window.VotAndroidBridge.onUserTap();
+                        }
                     }
                 }, true);
+
+                document.addEventListener('fullscreenchange', function() {
+                    const isFs = !!document.fullscreenElement;
+                    if (window.VotAndroidBridge) window.VotAndroidBridge.onFullscreenChanged(isFs);
+                });
+
+                document.addEventListener('webkitfullscreenchange', function() {
+                    const isFs = !!document.webkitFullscreenElement;
+                    if (window.VotAndroidBridge) window.VotAndroidBridge.onFullscreenChanged(isFs);
+                });
 
                 window.setOriginalVolume = function(vol) {
                     const video = document.querySelector('video');
@@ -142,5 +174,10 @@ class VotWebBridge(
     @JavascriptInterface
     fun onUserTap() {
         mainHandler.post { onScreenTap() }
+    }
+
+    @JavascriptInterface
+    fun onFullscreenChanged(isFullscreen: Boolean) {
+        mainHandler.post { onFullscreenToggle(isFullscreen) }
     }
 }

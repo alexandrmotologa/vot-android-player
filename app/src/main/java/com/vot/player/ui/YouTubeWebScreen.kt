@@ -17,10 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -77,13 +74,25 @@ fun YouTubeWebScreen(
         }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     val bridge = remember {
         VotWebBridge(
             onPlay = { playerManager.play() },
             onPause = { playerManager.pause() },
             onSeek = { posMs -> playerManager.seekTo(posMs) },
             onTimeUpdate = { posMs -> playerManager.syncWebPosition(posMs) },
-            onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) }
+            onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
+            onFullscreenToggle = { isFs ->
+                val act = context as? android.app.Activity
+                act?.requestedOrientation = if (isFs) {
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                } else {
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            }
         )
     }
 
@@ -132,6 +141,20 @@ fun YouTubeWebScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        val act = context as? android.app.Activity
+                        if (isLandscape) {
+                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (isLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = "Toggle Fullscreen",
+                            tint = Color.White
+                        )
+                    }
                     IconButton(onClick = { webViewRef?.reload() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = Color.White)
                     }
@@ -152,8 +175,8 @@ fun YouTubeWebScreen(
         ) {
             // Android WebView
             AndroidView(
-                factory = { context ->
-                    WebView(context).apply {
+                factory = { ctx ->
+                    WebView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -199,6 +222,16 @@ fun YouTubeWebScreen(
                             override fun onReceivedTitle(view: WebView?, title: String?) {
                                 super.onReceivedTitle(view, title)
                                 if (!title.isNullOrEmpty()) pageTitle = title
+                            }
+
+                            override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
+                                val act = context as? android.app.Activity
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+
+                            override fun onHideCustomView() {
+                                val act = context as? android.app.Activity
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                             }
                         }
 

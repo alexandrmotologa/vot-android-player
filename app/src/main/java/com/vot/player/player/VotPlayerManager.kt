@@ -367,12 +367,17 @@ class VotPlayerManager(
         webVideoController?.setPlaybackSpeed(speed)
     }
 
+    fun setSubtitles(cues: List<SubtitleCue>) {
+        subtitleCues = cues
+        updateSubtitles(_currentPositionMs.value)
+    }
+
     fun setSubtitlesEnabled(enabled: Boolean) {
         isSubtitlesEnabled = enabled
         if (!enabled) {
             _currentSubtitle.value = null
         } else {
-            updateSubtitles(videoPlayer.currentPosition)
+            updateSubtitles(_currentPositionMs.value)
         }
     }
 

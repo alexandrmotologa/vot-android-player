@@ -86,6 +86,7 @@ fun PlayerScreen(
     val selectedQuality by playerManager.selectedQuality.collectAsState()
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
@@ -258,7 +259,15 @@ fun PlayerScreen(
                         onSeek = { posMs -> playerManager.seekTo(posMs) },
                         onTimeUpdate = { posMs -> playerManager.syncWebPosition(posMs) },
                         onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
-                        onScreenTap = { showControls = !showControls }
+                        onScreenTap = { showControls = !showControls },
+                        onFullscreenToggle = { isFs ->
+                            val act = context as? android.app.Activity
+                            act?.requestedOrientation = if (isFs) {
+                                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            } else {
+                                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                            }
+                        }
                     )
                 }
 
@@ -318,6 +327,17 @@ fun PlayerScreen(
                                     view?.evaluateJavascript(cssInjection, null)
                                     view?.evaluateJavascript(VotWebBridge.INJECTION_SCRIPT, null)
                                     view?.evaluateJavascript("window.setOriginalVolume($originalVolume);", null)
+                                }
+                            }
+
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
+                                    val act = context as? android.app.Activity
+                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                }
+                                override fun onHideCustomView() {
+                                    val act = context as? android.app.Activity
+                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                 }
                             }
                             loadUrl(embeddedUrl)
@@ -420,6 +440,20 @@ fun PlayerScreen(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            val act = context as? android.app.Activity
+                            if (isLandscape) {
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (isLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                contentDescription = "Toggle Fullscreen",
+                                tint = Color.White
+                            )
+                        }
                         IconButton(onClick = { playerManager.toggleAudioOnly() }) {
                             Icon(
                                 imageVector = Icons.Default.Headphones,

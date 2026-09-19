@@ -199,6 +199,17 @@ class VotApiClient(
                     )
                     delay(waitSec * 1000L)
                 } else if (result.isFailed) {
+                    if (voiceType == VoiceType.LIVE_VOICE || preferredVoice.isNotEmpty()) {
+                        onProgress?.invoke("Using standard voice-over...")
+                        return@withContext translateVideo(
+                            videoUrl = videoUrl,
+                            durationSeconds = durationSeconds,
+                            targetLang = targetLang,
+                            voiceType = VoiceType.STANDARD,
+                            preferredVoice = "",
+                            onProgress = onProgress
+                        )
+                    }
                     return@withContext Result.failure(Exception(result.message ?: "Yandex translation failed for this video."))
                 } else {
                     delay(2000L)
