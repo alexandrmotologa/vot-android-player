@@ -1,5 +1,7 @@
 package com.vot.player.web
 
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
 
 class VotWebBridge(
@@ -7,8 +9,11 @@ class VotWebBridge(
     private val onPause: () -> Unit,
     private val onSeek: (positionMs: Long) -> Unit,
     private val onTimeUpdate: (positionMs: Long) -> Unit = {},
-    private val onRateChange: (rate: Float) -> Unit = {}
+    private val onRateChange: (rate: Float) -> Unit = {},
+    private val onScreenTap: () -> Unit = {}
 ) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     companion object {
         const val INTERFACE_NAME = "VotAndroidBridge"
 
@@ -52,7 +57,15 @@ class VotWebBridge(
                         if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPlay();
                     });
 
+                    video.addEventListener('playing', function() {
+                        if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPlay();
+                    });
+
                     video.addEventListener('pause', function() {
+                        if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPause();
+                    });
+
+                    video.addEventListener('waiting', function() {
                         if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPause();
                     });
 
@@ -84,6 +97,12 @@ class VotWebBridge(
                 observer.observe(document.documentElement, { childList: true, subtree: true });
                 findAndHook();
 
+                document.addEventListener('click', function(e) {
+                    if (window.VotAndroidBridge) {
+                        window.VotAndroidBridge.onUserTap();
+                    }
+                }, true);
+
                 window.setOriginalVolume = function(vol) {
                     const video = document.querySelector('video');
                     if (video) {
@@ -97,26 +116,31 @@ class VotWebBridge(
 
     @JavascriptInterface
     fun onVideoPlay() {
-        onPlay()
+        mainHandler.post { onPlay() }
     }
 
     @JavascriptInterface
     fun onVideoPause() {
-        onPause()
+        mainHandler.post { onPause() }
     }
 
     @JavascriptInterface
     fun onVideoSeek(positionMs: Long) {
-        onSeek(positionMs)
+        mainHandler.post { onSeek(positionMs) }
     }
 
     @JavascriptInterface
     fun onVideoTimeUpdate(positionMs: Long) {
-        onTimeUpdate(positionMs)
+        mainHandler.post { onTimeUpdate(positionMs) }
     }
 
     @JavascriptInterface
     fun onVideoRateChange(rate: Float) {
-        onRateChange(rate)
+        mainHandler.post { onRateChange(rate) }
+    }
+
+    @JavascriptInterface
+    fun onUserTap() {
+        mainHandler.post { onScreenTap() }
     }
 }

@@ -44,6 +44,7 @@ import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 import com.vot.player.web.VotWebBridge
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @Composable
 fun PlayerScreen(
@@ -52,8 +53,8 @@ fun PlayerScreen(
     videoAuthor: String,
     thumbnailUrl: String? = null,
     embeddedUrl: String? = null,
-    statusMessage: String?,
-    isLoading: Boolean,
+    statusMessage: String? = null,
+    isLoading: Boolean = false,
     selectedVoiceType: VoiceType,
     onVoiceTypeChange: (VoiceType) -> Unit,
     selectedVoiceGender: VoiceGender = VoiceGender.AUTO,
@@ -92,10 +93,10 @@ fun PlayerScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
-    // Auto-hide controls after 4 seconds
+    // Auto-hide controls after 7 seconds of playing
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {
-            delay(4000L)
+            delay(7000L)
             showControls = false
         }
     }
@@ -256,7 +257,8 @@ fun PlayerScreen(
                         onPause = { playerManager.pause() },
                         onSeek = { posMs -> playerManager.seekTo(posMs) },
                         onTimeUpdate = { posMs -> playerManager.syncWebPosition(posMs) },
-                        onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) }
+                        onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
+                        onScreenTap = { showControls = !showControls }
                     )
                 }
 
@@ -533,6 +535,42 @@ fun PlayerScreen(
                         onOriginalVolumeChange = { playerManager.setOriginalVolume(it) },
                         onVoiceoverVolumeChange = { playerManager.setVoiceoverVolume(it) },
                         onToggleOriginalMute = { playerManager.toggleOriginalMute() }
+                    )
+                }
+            }
+        }
+
+        // Floating Persistent Pill when controls are hidden
+        AnimatedVisibility(
+            visible = !showControls,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = if (isLandscape) 12.dp else 28.dp, end = 16.dp)
+        ) {
+            Surface(
+                onClick = { showControls = true },
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xCC1A1A24),
+                contentColor = Color.White,
+                shadowElevation = 6.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Show VOT Controls",
+                        tint = AccentRed,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "VOT ${(voiceoverVolume * 100).roundToInt()}%",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }

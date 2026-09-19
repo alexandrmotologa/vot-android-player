@@ -235,10 +235,8 @@ class VotPlayerManager(
             if (delta > 300) {
                 voiceoverPlayer.seekTo(webPositionMs)
             }
-            if (!_isPlaying.value) {
-                _isPlaying.value = true
-                voiceoverPlayer.playWhenReady = true
-                voiceoverPlayer.play()
+            if (!_isPlaying.value && voiceoverPlayer.isPlaying) {
+                voiceoverPlayer.pause()
             }
         }
     }
@@ -288,6 +286,7 @@ class VotPlayerManager(
     }
 
     fun play() {
+        _isPlaying.value = true
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.play()
         } else {
@@ -297,10 +296,10 @@ class VotPlayerManager(
             voiceoverPlayer.playWhenReady = true
             voiceoverPlayer.play()
         }
-        _isPlaying.value = true
     }
 
     fun pause() {
+        _isPlaying.value = false
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.pause()
         } else {
@@ -309,7 +308,6 @@ class VotPlayerManager(
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.pause()
         }
-        _isPlaying.value = false
     }
 
     fun togglePlayPause() {
