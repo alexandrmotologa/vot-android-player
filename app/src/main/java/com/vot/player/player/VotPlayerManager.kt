@@ -83,12 +83,28 @@ class VotPlayerManager(
     private var lastNonZeroOriginalVolume: Float = 0.20f
     private val dataSourceFactory = DefaultDataSource.Factory(context)
 
+    interface WebVideoController {
+        fun play()
+        fun pause()
+        fun seekTo(positionMs: Long)
+        fun setVolume(volume: Float)
+        fun setPlaybackSpeed(speed: Float)
+    }
+
+    var webVideoController: WebVideoController? = null
+
     init {
         val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
             .setUsage(androidx.media3.common.C.USAGE_MEDIA)
             .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
         videoPlayer.setAudioAttributes(audioAttributes, true)
+
+        val speechAttributes = androidx.media3.common.AudioAttributes.Builder()
+            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_SPEECH)
+            .build()
+        voiceoverPlayer.setAudioAttributes(speechAttributes, false)
 
         videoPlayer.volume = _originalVolume.value
         voiceoverPlayer.volume = _voiceoverVolume.value
@@ -189,13 +205,38 @@ class VotPlayerManager(
         voiceoverPlayer.playWhenReady = true
     }
 
-    fun setVoiceoverAudio(audioUrl: String?) {
+    fun setVoiceoverAudio(audioUrl: String?, startPlaying: Boolean = true) {
         currentVoiceoverAudioUrl = audioUrl
         if (!audioUrl.isNullOrEmpty()) {
             val audioItem = MediaItem.fromUri(audioUrl)
             voiceoverPlayer.setMediaItem(audioItem)
+            voiceoverPlayer.volume = _voiceoverVolume.value
             voiceoverPlayer.prepare()
-            if (_isPlaying.value) {
+
+            val currentPos = _currentPositionMs.value
+            if (currentPos > 0L) {
+                voiceoverPlayer.seekTo(currentPos)
+            }
+
+            if (startPlaying || _isPlaying.value) {
+                voiceoverPlayer.playWhenReady = true
+                voiceoverPlayer.play()
+                _isPlaying.value = true
+            }
+        }
+    }
+
+    fun syncWebPosition(webPositionMs: Long) {
+        _currentPositionMs.value = webPositionMs
+        updateSubtitles(webPositionMs)
+        if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {
+            val aPos = voiceoverPlayer.currentPosition
+            val delta = kotlin.math.abs(webPositionMs - aPos)
+            if (delta > 300) {
+                voiceoverPlayer.seekTo(webPositionMs)
+            }
+            if (!_isPlaying.value) {
+                _isPlaying.value = true
                 voiceoverPlayer.playWhenReady = true
                 voiceoverPlayer.play()
             }
@@ -249,6 +290,8 @@ class VotPlayerManager(
     fun play() {
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.play()
+        } else {
+            webVideoController?.play()
         }
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.playWhenReady = true
@@ -260,6 +303,8 @@ class VotPlayerManager(
     fun pause() {
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.pause()
+        } else {
+            webVideoController?.pause()
         }
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.pause()
@@ -278,6 +323,8 @@ class VotPlayerManager(
         val target = positionMs.coerceIn(0L, maxDuration)
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.seekTo(target)
+        } else {
+            webVideoController?.seekTo(target)
         }
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.seekTo(target)
@@ -294,6 +341,7 @@ class VotPlayerManager(
         val clamped = volume.coerceIn(0f, 1f)
         _originalVolume.value = clamped
         videoPlayer.volume = clamped
+        webVideoController?.setVolume(clamped)
         if (clamped > 0f) {
             lastNonZeroOriginalVolume = clamped
         }
@@ -318,6 +366,7 @@ class VotPlayerManager(
         val params = PlaybackParameters(speed)
         videoPlayer.playbackParameters = params
         voiceoverPlayer.playbackParameters = params
+        webVideoController?.setPlaybackSpeed(speed)
     }
 
     fun setSubtitlesEnabled(enabled: Boolean) {

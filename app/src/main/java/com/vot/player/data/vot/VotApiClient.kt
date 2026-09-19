@@ -24,7 +24,7 @@ class VotApiClient(
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build(),
-    private val workerHosts: List<String> = listOf("vot-worker.eu.cc", "vot-worker.vtrans.eu.cc")
+    private val workerHosts: List<String> = listOf("vot-worker.vtrans.eu.cc", "vot-worker.eu.cc")
 ) {
     private var currentHostIndex = 0
     private val workerHost: String get() = workerHosts[currentHostIndex % workerHosts.size]
@@ -67,45 +67,56 @@ class VotApiClient(
             return@withContext current
         }
 
-        val uuid = generateUUID()
-        val sessionBody = VotProtobuf.encodeSessionRequest(uuid, "video-translation")
-        val bodySign = signHmacSha256(sessionBody)
+        var lastException: Exception? = null
+        for (i in workerHosts.indices) {
+            val host = workerHosts[currentHostIndex % workerHosts.size]
+            try {
+                val uuid = generateUUID()
+                val sessionBody = VotProtobuf.encodeSessionRequest(uuid, "video-translation")
+                val bodySign = signHmacSha256(sessionBody)
 
-        val innerHeaders = JSONObject().apply {
-            put("Accept", "application/x-protobuf")
-            put("Content-Type", "application/x-protobuf")
-            put("User-Agent", USER_AGENT)
-            put("Vtrans-Signature", bodySign)
+                val innerHeaders = JSONObject().apply {
+                    put("Accept", "application/x-protobuf")
+                    put("Content-Type", "application/x-protobuf")
+                    put("User-Agent", USER_AGENT)
+                    put("Vtrans-Signature", bodySign)
+                }
+
+                val encodedHeaders = Base64.encodeToString(
+                    innerHeaders.toString().toByteArray(Charsets.UTF_8),
+                    Base64.NO_WRAP
+                )
+
+                val request = Request.Builder()
+                    .url("https://$host/session/create")
+                    .post(sessionBody.toRequestBody("application/x-protobuf".toMediaType()))
+                    .header("User-Agent", "vot.js/3.1.0")
+                    .header("X-VOT-Headers", encodedHeaders)
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    rotateHost()
+                    continue
+                }
+
+                val responseBytes = response.body?.bytes()
+                    ?: throw Exception("Empty session response")
+
+                val (secretKey, expiresSeconds) = VotProtobuf.decodeSessionResponse(responseBytes)
+                val session = SessionData(
+                    uuid = uuid,
+                    secretKey = secretKey,
+                    expiresAtMs = now + (expiresSeconds.toLong() * 1000)
+                )
+                activeSession = session
+                return@withContext session
+            } catch (e: Exception) {
+                lastException = e
+                rotateHost()
+            }
         }
-
-        val encodedHeaders = Base64.encodeToString(
-            innerHeaders.toString().toByteArray(Charsets.UTF_8),
-            Base64.NO_WRAP
-        )
-
-        val request = Request.Builder()
-            .url("https://$workerHost/session/create")
-            .post(sessionBody.toRequestBody("application/x-protobuf".toMediaType()))
-            .header("User-Agent", "vot.js/3.1.0")
-            .header("X-VOT-Headers", encodedHeaders)
-            .build()
-
-        val response = okHttpClient.newCall(request).execute()
-        if (!response.isSuccessful) {
-            throw Exception("Failed to create VOT session: HTTP ${response.code}")
-        }
-
-        val responseBytes = response.body?.bytes()
-            ?: throw Exception("Empty session response")
-
-        val (secretKey, expiresSeconds) = VotProtobuf.decodeSessionResponse(responseBytes)
-        val session = SessionData(
-            uuid = uuid,
-            secretKey = secretKey,
-            expiresAtMs = now + (expiresSeconds.toLong() * 1000)
-        )
-        activeSession = session
-        session
+        throw lastException ?: Exception("Failed to create VOT session on all hosts")
     }
 
     suspend fun translateVideo(
@@ -164,6 +175,9 @@ class VotApiClient(
 
                 val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
+                    rotateHost()
+                    activeSession = null
+                    if (attempts < maxAttempts) continue
                     return@withContext Result.failure(Exception("Translation request failed: HTTP ${response.code}"))
                 }
 

@@ -126,6 +126,8 @@ class MainActivity : ComponentActivity() {
                             YouTubeWebScreen(
                                 videoUrl = webUrl,
                                 playerManager = playerManager,
+                                statusMessage = statusMessage,
+                                currentTranslatedAudioUrl = currentTranslatedAudioUrl,
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
@@ -159,6 +161,7 @@ class MainActivity : ComponentActivity() {
                                 videoTitle = info.title,
                                 videoAuthor = info.author,
                                 thumbnailUrl = info.thumbnailUrl,
+                                embeddedUrl = if (info.streamUrl.startsWith("http")) info.streamUrl else null,
                                 statusMessage = statusMessage,
                                 isLoading = isLoading,
                                 selectedVoiceType = selectedVoiceType,
@@ -421,10 +424,14 @@ class MainActivity : ComponentActivity() {
             )
             val cues = subtitlesResult.getOrDefault(emptyList())
 
-            isLoading = false
-            statusMessage = null
             val audioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = audioUrl
+            isLoading = false
+            if (votResult.isSuccess) {
+                statusMessage = "Translation active (Russian)"
+            } else {
+                statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
+            }
 
             if (!audioUrl.isNullOrEmpty()) {
                 playerManager.setVoiceoverAudio(audioUrl)
@@ -471,9 +478,72 @@ class MainActivity : ComponentActivity() {
             val streamResult = streamExtractor.extract(rawUrl)
             if (streamResult.isFailure) {
                 if (videoId != null) {
-                    statusMessage = "Direct stream restricted. Switching to YouTube Web View..."
-                    kotlinx.coroutines.delay(1200)
-                    openYouTubeWebView(rawUrl)
+                    val webUrl = "https://m.youtube.com/watch?v=$videoId"
+                    val fallbackInfo = UniversalVideoInfo(
+                        id = videoId,
+                        rawUrl = rawUrl,
+                        title = "YouTube Video",
+                        author = "YouTube",
+                        durationSeconds = 0L,
+                        streamUrl = webUrl,
+                        thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                        platform = PlatformType.YOUTUBE
+                    )
+                    currentVideoInfo = fallbackInfo
+                    statusMessage = "Requesting Russian voice-over translation..."
+
+                    if (isSponsorBlockEnabled) {
+                        launch {
+                            val segments = sponsorBlockClient.getSkipSegments(videoId)
+                            playerManager.setSponsorSegments(segments)
+                        }
+                    }
+
+                    val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
+                    val votUrl = "https://www.youtube.com/watch?v=$videoId"
+
+                    val votResult = votApiClient.translateVideo(
+                        videoUrl = votUrl,
+                        durationSeconds = 0.0,
+                        targetLang = selectedLanguage,
+                        voiceType = selectedVoiceType,
+                        preferredVoice = preferredVoiceParam,
+                        onProgress = { statusMessage = it }
+                    )
+
+                    val subtitlesResult = votApiClient.getSubtitles(
+                        videoUrl = votUrl,
+                        targetLang = selectedLanguage
+                    )
+                    val cues = subtitlesResult.getOrDefault(emptyList())
+
+                    isLoading = false
+                    val translatedAudioUrl = votResult.getOrNull()?.url
+                    currentTranslatedAudioUrl = translatedAudioUrl
+                    if (votResult.isSuccess) {
+                        statusMessage = "Translation active (Russian)"
+                    } else {
+                        statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
+                    }
+
+                    if (!translatedAudioUrl.isNullOrEmpty()) {
+                        playerManager.setVoiceoverAudio(translatedAudioUrl)
+                    }
+
+                    historyDb.saveOrUpdate(
+                        WatchHistoryItem(
+                            videoId = fallbackInfo.id,
+                            url = rawUrl,
+                            title = fallbackInfo.title,
+                            thumbnailUrl = fallbackInfo.thumbnailUrl ?: "",
+                            lastPositionMs = 0L,
+                            durationMs = 0L,
+                            preferredVoice = selectedVoiceType.name.lowercase(),
+                            originalVolume = playerManager.originalVolume.value,
+                            voiceVolume = playerManager.voiceoverVolume.value
+                        )
+                    )
+                    loadHistory()
                     return@launch
                 }
                 isLoading = false
@@ -521,11 +591,14 @@ class MainActivity : ComponentActivity() {
             )
             val cues = subtitlesResult.getOrDefault(emptyList())
 
-            isLoading = false
-            statusMessage = null
-
             val translatedAudioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = translatedAudioUrl
+            isLoading = false
+            if (votResult.isSuccess) {
+                statusMessage = "Translation active (Russian)"
+            } else {
+                statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
+            }
 
             historyDb.saveOrUpdate(
                 WatchHistoryItem(

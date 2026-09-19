@@ -12,7 +12,7 @@ data class VotTranslationResult(
     val isSuccess: Boolean get() = status == 1 && !url.isNullOrEmpty()
     val isWaiting: Boolean get() = status == 2 || status == 6 || (status == 0 && remainingTime > 0)
     val isAudioRequested: Boolean get() = status == 3
-    val isFailed: Boolean get() = status == 5
+    val isFailed: Boolean get() = status == 5 || (status == 0 && remainingTime <= 0 && !message.isNullOrEmpty())
 }
 
 data class SubtitleCue(

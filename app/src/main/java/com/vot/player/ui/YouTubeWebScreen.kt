@@ -46,6 +46,8 @@ import com.vot.player.web.VotWebBridge
 fun YouTubeWebScreen(
     videoUrl: String,
     playerManager: VotPlayerManager,
+    statusMessage: String? = null,
+    currentTranslatedAudioUrl: String? = null,
     selectedVoiceType: VoiceType,
     onVoiceTypeChange: (VoiceType) -> Unit,
     selectedSubtitles: SubtitlesMode,
@@ -78,8 +80,36 @@ fun YouTubeWebScreen(
             onPlay = { playerManager.play() },
             onPause = { playerManager.pause() },
             onSeek = { posMs -> playerManager.seekTo(posMs) },
+            onTimeUpdate = { posMs -> playerManager.syncWebPosition(posMs) },
             onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) }
         )
+    }
+
+    DisposableEffect(webViewRef) {
+        val controller = object : VotPlayerManager.WebVideoController {
+            override fun play() {
+                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && v.paused) v.play();", null)
+            }
+            override fun pause() {
+                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && !v.paused) v.pause();", null)
+            }
+            override fun seekTo(positionMs: Long) {
+                val sec = positionMs / 1000.0
+                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.currentTime = $sec;", null)
+            }
+            override fun setVolume(volume: Float) {
+                webViewRef?.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($volume);", null)
+            }
+            override fun setPlaybackSpeed(speed: Float) {
+                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.playbackRate = $speed;", null)
+            }
+        }
+        playerManager.webVideoController = controller
+        onDispose {
+            if (playerManager.webVideoController === controller) {
+                playerManager.webVideoController = null
+            }
+        }
     }
 
     Scaffold(
@@ -185,8 +215,10 @@ fun YouTubeWebScreen(
             }
 
             // Floating VOT Controller Pill
+            val isSynced = !currentTranslatedAudioUrl.isNullOrEmpty()
+            val pillColor = if (isSynced) Color(0xFF1B5E20) else AccentRed
             Surface(
-                color = AccentRed,
+                color = pillColor,
                 shape = RoundedCornerShape(20.dp),
                 shadowElevation = 8.dp,
                 modifier = Modifier
@@ -198,19 +230,48 @@ fun YouTubeWebScreen(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.GraphicEq,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "VOT Active",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isSynced) {
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "VOT Synced (RU)",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else if (!statusMessage.isNullOrEmpty()) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = statusMessage.take(24),
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "VOT Active",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

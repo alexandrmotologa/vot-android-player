@@ -6,10 +6,30 @@ class VotWebBridge(
     private val onPlay: () -> Unit,
     private val onPause: () -> Unit,
     private val onSeek: (positionMs: Long) -> Unit,
-    private val onRateChange: (rate: Float) -> Unit
+    private val onTimeUpdate: (positionMs: Long) -> Unit = {},
+    private val onRateChange: (rate: Float) -> Unit = {}
 ) {
     companion object {
         const val INTERFACE_NAME = "VotAndroidBridge"
+
+        val MINIMALIST_CSS = """
+            #comments, 
+            #related, 
+            ytm-item-section-renderer, 
+            .header-bar, 
+            ytm-mobile-topbar-renderer, 
+            ytm-pivot-bar-renderer, 
+            .slim-video-metadata-header, 
+            ytm-engagement-panel, 
+            .ytm-carousel,
+            ytm-search-box,
+            .standalone-collection-badge-renderer {
+                display: none !important;
+            }
+            body, html {
+                background: #000 !important;
+            }
+        """.trimIndent()
 
         val INJECTION_SCRIPT = """
             (function() {
@@ -19,6 +39,14 @@ class VotWebBridge(
                 function hookVideo(video) {
                     if (!video || video.__vot_hooked) return;
                     video.__vot_hooked = true;
+
+                    // If already playing when hooked, notify bridge immediately
+                    if (!video.paused && video.currentTime > 0) {
+                        if (window.VotAndroidBridge) {
+                            window.VotAndroidBridge.onVideoPlay();
+                            window.VotAndroidBridge.onVideoTimeUpdate(Math.round(video.currentTime * 1000));
+                        }
+                    }
 
                     video.addEventListener('play', function() {
                         if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPlay();
@@ -31,6 +59,12 @@ class VotWebBridge(
                     video.addEventListener('seeked', function() {
                         if (window.VotAndroidBridge) {
                             window.VotAndroidBridge.onVideoSeek(Math.round(video.currentTime * 1000));
+                        }
+                    });
+
+                    video.addEventListener('timeupdate', function() {
+                        if (window.VotAndroidBridge && !video.paused) {
+                            window.VotAndroidBridge.onVideoTimeUpdate(Math.round(video.currentTime * 1000));
                         }
                     });
 
@@ -52,7 +86,10 @@ class VotWebBridge(
 
                 window.setOriginalVolume = function(vol) {
                     const video = document.querySelector('video');
-                    if (video) video.volume = Math.max(0, Math.min(1, vol));
+                    if (video) {
+                        video.volume = Math.max(0, Math.min(1, vol));
+                        video.muted = (vol <= 0.01);
+                    }
                 };
             })();
         """.trimIndent()
@@ -71,6 +108,11 @@ class VotWebBridge(
     @JavascriptInterface
     fun onVideoSeek(positionMs: Long) {
         onSeek(positionMs)
+    }
+
+    @JavascriptInterface
+    fun onVideoTimeUpdate(positionMs: Long) {
+        onTimeUpdate(positionMs)
     }
 
     @JavascriptInterface
