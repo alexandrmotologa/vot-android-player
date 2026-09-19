@@ -1,6 +1,8 @@
 package com.vot.player
 
 import android.app.PictureInPictureParams
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -76,6 +78,25 @@ class MainActivity : ComponentActivity() {
     private var showModeDialog by mutableStateOf(false)
     private var showSettingsFromHome by mutableStateOf(false)
     private var appUpdateInfo by mutableStateOf<AppUpdateInfo?>(null)
+    private var detectedClipboardUrl by mutableStateOf<String?>(null)
+    private var dismissedClipboardUrl by mutableStateOf<String?>(null)
+
+    override fun onResume() {
+        super.onResume()
+        checkClipboard()
+    }
+
+    private fun checkClipboard() {
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()?.trim().orEmpty()
+            if (clipText.isNotBlank() && clipText != dismissedClipboardUrl && clipText != activeVideoUrl) {
+                if (YouTubeStreamExtractor.extractVideoId(clipText) != null) {
+                    detectedClipboardUrl = clipText
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -246,9 +267,15 @@ class MainActivity : ComponentActivity() {
                         HistoryScreen(
                             historyItems = historyList,
                             updateInfo = appUpdateInfo,
+                            detectedClipboardUrl = detectedClipboardUrl,
+                            onDismissClipboard = {
+                                dismissedClipboardUrl = detectedClipboardUrl
+                                detectedClipboardUrl = null
+                            },
                             onDownloadUpdate = { updateChecker.downloadUpdate(this@MainActivity, it) },
                             onOpenSettings = { showSettingsFromHome = true },
                             onPlayUrl = { url, startPos ->
+                                detectedClipboardUrl = null
                                 onUrlTriggered(url, startPos)
                             },
                             onDeleteItem = { videoId ->

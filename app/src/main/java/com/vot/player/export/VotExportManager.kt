@@ -64,7 +64,24 @@ class VotExportManager(
                 }
             }
 
-            // 3. Save to MediaStore or Downloads
+            // 3. Mux video and translated audio track if present
+            var tempMuxedFile: File? = null
+            val finalFileToSave: File = if (tempAudioFile != null && tempAudioFile.exists()) {
+                val muxCandidate = File(context.cacheDir, "temp_muxed_${System.currentTimeMillis()}.mp4")
+                try {
+                    _exportState.value = ExportState.Muxing("Muxing video with translated voice-over...")
+                    muxVideoAndAudio(tempVideoFile, tempAudioFile, muxCandidate)
+                    tempMuxedFile = muxCandidate
+                    muxCandidate
+                } catch (_: Exception) {
+                    // Fallback to video file if muxing fails
+                    tempVideoFile
+                }
+            } else {
+                tempVideoFile
+            }
+
+            // 4. Save to MediaStore or Downloads
             _exportState.value = ExportState.Muxing("Saving video to Downloads...")
 
             val fileName = "VOT_${safeTitle}_${System.currentTimeMillis()}.mp4"
@@ -83,7 +100,7 @@ class VotExportManager(
                     ?: throw IllegalStateException("Failed to create MediaStore entry")
 
                 context.contentResolver.openOutputStream(outputUri)?.use { outStream ->
-                    tempVideoFile.inputStream().use { inStream ->
+                    finalFileToSave.inputStream().use { inStream ->
                         inStream.copyTo(outStream)
                     }
                 }
@@ -96,7 +113,7 @@ class VotExportManager(
                 val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val targetDir = File(downloadDir, "VOT").apply { mkdirs() }
                 val targetFile = File(targetDir, fileName)
-                tempVideoFile.copyTo(targetFile, overwrite = true)
+                finalFileToSave.copyTo(targetFile, overwrite = true)
                 outputUri = Uri.fromFile(targetFile)
                 destinationPath = targetFile.absolutePath
             }
@@ -104,10 +121,108 @@ class VotExportManager(
             // Clean up temp files
             tempVideoFile.delete()
             tempAudioFile?.delete()
+            tempMuxedFile?.delete()
 
             _exportState.value = ExportState.Success(outputUri, destinationPath)
         } catch (e: Exception) {
             _exportState.value = ExportState.Error(e.message ?: "Export failed")
+        }
+    }
+
+    private fun muxVideoAndAudio(videoFile: File, audioFile: File, outputFile: File) {
+        val videoExtractor = MediaExtractor()
+        val audioExtractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+
+        try {
+            videoExtractor.setDataSource(videoFile.absolutePath)
+            audioExtractor.setDataSource(audioFile.absolutePath)
+
+            muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+            var videoTrackIndex = -1
+            var videoMuxerTrackIndex = -1
+            var maxVideoBufferSize = 1024 * 1024
+
+            for (i in 0 until videoExtractor.trackCount) {
+                val format = videoExtractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/")) {
+                    videoTrackIndex = i
+                    videoMuxerTrackIndex = muxer.addTrack(format)
+                    if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                        maxVideoBufferSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(maxVideoBufferSize)
+                    }
+                    break
+                }
+            }
+
+            var audioTrackIndex = -1
+            var audioMuxerTrackIndex = -1
+            var maxAudioBufferSize = 256 * 1024
+
+            for (i in 0 until audioExtractor.trackCount) {
+                val format = audioExtractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio/")) {
+                    audioTrackIndex = i
+                    audioMuxerTrackIndex = muxer.addTrack(format)
+                    if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                        maxAudioBufferSize = format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(maxAudioBufferSize)
+                    }
+                    break
+                }
+            }
+
+            if (videoTrackIndex == -1) {
+                throw IllegalStateException("No video track found in source video")
+            }
+
+            muxer.start()
+
+            // Write video frames
+            videoExtractor.selectTrack(videoTrackIndex)
+            val videoBuffer = ByteBuffer.allocate(maxVideoBufferSize)
+            val bufferInfo = MediaCodec.BufferInfo()
+
+            while (true) {
+                val sampleSize = videoExtractor.readSampleData(videoBuffer, 0)
+                if (sampleSize < 0) break
+
+                bufferInfo.offset = 0
+                bufferInfo.size = sampleSize
+                bufferInfo.presentationTimeUs = videoExtractor.sampleTime
+                bufferInfo.flags = videoExtractor.sampleFlags
+
+                muxer.writeSampleData(videoMuxerTrackIndex, videoBuffer, bufferInfo)
+                videoExtractor.advance()
+            }
+
+            // Write audio frames if available
+            if (audioTrackIndex != -1 && audioMuxerTrackIndex != -1) {
+                audioExtractor.selectTrack(audioTrackIndex)
+                val audioBuffer = ByteBuffer.allocate(maxAudioBufferSize)
+
+                while (true) {
+                    val sampleSize = audioExtractor.readSampleData(audioBuffer, 0)
+                    if (sampleSize < 0) break
+
+                    bufferInfo.offset = 0
+                    bufferInfo.size = sampleSize
+                    bufferInfo.presentationTimeUs = audioExtractor.sampleTime
+                    bufferInfo.flags = audioExtractor.sampleFlags
+
+                    muxer.writeSampleData(audioMuxerTrackIndex, audioBuffer, bufferInfo)
+                    audioExtractor.advance()
+                }
+            }
+        } finally {
+            try {
+                muxer?.stop()
+                muxer?.release()
+            } catch (_: Exception) {}
+            videoExtractor.release()
+            audioExtractor.release()
         }
     }
 

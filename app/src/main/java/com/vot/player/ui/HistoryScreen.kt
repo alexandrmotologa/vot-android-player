@@ -11,9 +11,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,6 +44,8 @@ import java.util.Locale
 fun HistoryScreen(
     historyItems: List<WatchHistoryItem>,
     updateInfo: com.vot.player.data.update.AppUpdateInfo? = null,
+    detectedClipboardUrl: String? = null,
+    onDismissClipboard: () -> Unit = {},
     onDownloadUpdate: (com.vot.player.data.update.AppUpdateInfo) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onPlayUrl: (url: String, startPositionMs: Long) -> Unit,
@@ -50,6 +54,14 @@ fun HistoryScreen(
 ) {
     val context = LocalContext.current
     var inputUrl by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredHistory = remember(historyItems, searchQuery) {
+        if (searchQuery.isBlank()) historyItems
+        else historyItems.filter {
+            it.title.contains(searchQuery, ignoreCase = true) || it.url.contains(searchQuery, ignoreCase = true)
+        }
+    }
 
     val continueWatching = remember(historyItems) {
         historyItems.filter { it.lastPositionMs > 5_000L && it.durationMs > 0L && (it.durationMs - it.lastPositionMs) > 10_000L }
@@ -150,6 +162,40 @@ fun HistoryScreen(
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
+
+                // Clipboard Detected Banner
+                if (!detectedClipboardUrl.isNullOrEmpty()) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = null, tint = AccentRed, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Link detected in clipboard", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = detectedClipboardUrl.take(45) + if (detectedClipboardUrl.length > 45) "..." else "",
+                                    color = TextSecondary,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            TextButton(onClick = { onPlayUrl(detectedClipboardUrl, 0L) }) {
+                                Text("Play", color = AccentRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            IconButton(onClick = onDismissClipboard) {
+                                Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
 
                 // URL Input Bar
                 OutlinedTextField(
@@ -256,7 +302,35 @@ fun HistoryScreen(
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+
+                if (historyItems.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search history by title...", color = TextSecondary, fontSize = 13.sp) },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = DarkCard,
+                            unfocusedContainerColor = DarkCard,
+                            focusedBorderColor = AccentRed,
+                            unfocusedBorderColor = Color(0x22FFFFFF),
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             // History List Items
@@ -279,8 +353,19 @@ fun HistoryScreen(
                         )
                     }
                 }
+            } else if (filteredHistory.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 30.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("No videos match \"$searchQuery\"", color = TextSecondary, fontSize = 14.sp)
+                    }
+                }
             } else {
-                items(historyItems, key = { "hist_${it.videoId}" }) { item ->
+                items(filteredHistory, key = { "hist_${it.videoId}" }) { item ->
                     HistoryListItem(
                         item = item,
                         onClick = { onPlayUrl(item.url, item.lastPositionMs) },

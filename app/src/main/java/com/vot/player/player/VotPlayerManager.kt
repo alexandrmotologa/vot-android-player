@@ -81,7 +81,11 @@ class VotPlayerManager(
     private var isSubtitlesEnabled: Boolean = false
     private var syncJob: Job? = null
     private var lastNonZeroOriginalVolume: Float = 0.20f
-    private val dataSourceFactory = DefaultDataSource.Factory(context)
+    private val upstreamDataSourceFactory = DefaultDataSource.Factory(context)
+    private val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+        .setCache(VotMediaCache.getCache(context))
+        .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
+        .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     interface WebVideoController {
         fun play()
@@ -193,7 +197,8 @@ class VotPlayerManager(
 
         if (!voiceoverAudioUrl.isNullOrEmpty()) {
             val audioItem = MediaItem.fromUri(voiceoverAudioUrl)
-            voiceoverPlayer.setMediaItem(audioItem)
+            val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(audioItem)
+            voiceoverPlayer.setMediaSource(audioSource)
             voiceoverPlayer.prepare()
         }
 
@@ -209,7 +214,8 @@ class VotPlayerManager(
         currentVoiceoverAudioUrl = audioUrl
         if (!audioUrl.isNullOrEmpty()) {
             val audioItem = MediaItem.fromUri(audioUrl)
-            voiceoverPlayer.setMediaItem(audioItem)
+            val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(audioItem)
+            voiceoverPlayer.setMediaSource(audioSource)
             voiceoverPlayer.volume = _voiceoverVolume.value
             voiceoverPlayer.prepare()
 
@@ -248,13 +254,13 @@ class VotPlayerManager(
             .build()
 
         if (!audioUrl.isNullOrEmpty()) {
-            val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
             val audioItem = MediaItem.fromUri(audioUrl)
-            val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(audioItem)
+            val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(audioItem)
             val mergedSource = MergingMediaSource(videoSource, audioSource)
             videoPlayer.setMediaSource(mergedSource)
         } else {
-            val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
             videoPlayer.setMediaSource(videoSource)
         }
         videoPlayer.prepare()
