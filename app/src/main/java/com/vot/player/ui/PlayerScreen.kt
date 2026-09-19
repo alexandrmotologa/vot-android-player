@@ -73,6 +73,9 @@ fun PlayerScreen(
     onNavigateBack: () -> Unit,
     onExportVideo: () -> Unit,
     onExportAudio: () -> Unit,
+    isLiveVoiceAvailable: Boolean = true,
+    hasSubtitles: Boolean = true,
+    isCustomVoiceSupported: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val isPlaying by playerManager.isPlaying.collectAsState()
@@ -636,6 +639,9 @@ fun PlayerScreen(
                 onPlayerModeChange = onPlayerModeChange,
                 onExportVideoClick = onExportVideo,
                 onExportAudioClick = onExportAudio,
+                isLiveVoiceAvailable = isLiveVoiceAvailable,
+                hasSubtitles = hasSubtitles,
+                isCustomVoiceSupported = isCustomVoiceSupported,
                 onDismiss = { showSettingsDialog = false }
             )
         }

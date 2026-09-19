@@ -49,6 +49,9 @@ fun SettingsDialog(
     onToggleAudioOnly: () -> Unit = {},
     preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
     onPlayerModeChange: (PlayerMode) -> Unit = {},
+    isLiveVoiceAvailable: Boolean = true,
+    hasSubtitles: Boolean = true,
+    isCustomVoiceSupported: Boolean = true,
     onExportVideoClick: () -> Unit = {},
     onExportAudioClick: () -> Unit = {},
     onDismiss: () -> Unit
@@ -147,20 +150,32 @@ fun SettingsDialog(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Voice Gender Selection
-                Text(text = "Voice Gender", color = TextSecondary, fontSize = 13.sp)
+                Text(text = "Voice Gender (Yandex AI)", color = TextSecondary, fontSize = 13.sp)
+                if (!isCustomVoiceSupported) {
+                    Text(
+                        text = "Auto-detected: Yandex matches original speaker gender automatically",
+                        color = Color(0xFF888899),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     VoiceGender.values().forEach { gender ->
+                        val isEnabled = isCustomVoiceSupported || gender == VoiceGender.AUTO
                         FilterChip(
                             selected = selectedVoiceGender == gender,
-                            onClick = { onVoiceGenderChange(gender) },
+                            onClick = { if (isEnabled) onVoiceGenderChange(gender) },
+                            enabled = isEnabled,
                             label = { Text(gender.label) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = AccentRed,
-                                selectedLabelColor = Color.White
+                                selectedLabelColor = Color.White,
+                                disabledContainerColor = Color(0x22FFFFFF),
+                                disabledLabelColor = Color(0x44FFFFFF)
                             )
                         )
                     }
@@ -172,19 +187,31 @@ fun SettingsDialog(
 
                 // Specific Voice Actor
                 Text(text = "Preferred Voice Actor", color = TextSecondary, fontSize = 13.sp)
+                if (!isCustomVoiceSupported) {
+                    Text(
+                        text = "Custom actors not available for this video (Yandex uses auto-voice)",
+                        color = Color(0xFF888899),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     VoiceActor.values().forEach { actor ->
+                        val isEnabled = isCustomVoiceSupported || actor == VoiceActor.AUTO
                         FilterChip(
                             selected = selectedVoiceActor == actor,
-                            onClick = { onVoiceActorChange(actor) },
+                            onClick = { if (isEnabled) onVoiceActorChange(actor) },
+                            enabled = isEnabled,
                             label = { Text(actor.displayName.substringBefore(" ")) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = AccentRed,
-                                selectedLabelColor = Color.White
+                                selectedLabelColor = Color.White,
+                                disabledContainerColor = Color(0x22FFFFFF),
+                                disabledLabelColor = Color(0x44FFFFFF)
                             )
                         )
                     }
@@ -196,19 +223,31 @@ fun SettingsDialog(
 
                 // Voice Type (Standard vs Live Voice)
                 Text(text = "Voice Synthesis Engine", color = TextSecondary, fontSize = 13.sp)
+                if (!isLiveVoiceAvailable) {
+                    Text(
+                        text = "Notice: Only standard voice is provided by Yandex for this video",
+                        color = Color(0xFFFFA726),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     VoiceType.values().forEach { voice ->
+                        val isEnabled = voice == VoiceType.STANDARD || isLiveVoiceAvailable
                         FilterChip(
                             selected = selectedVoiceType == voice,
-                            onClick = { onVoiceTypeChange(voice) },
+                            onClick = { if (isEnabled) onVoiceTypeChange(voice) },
+                            enabled = isEnabled,
                             label = { Text(voice.label) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = AccentRed,
-                                selectedLabelColor = Color.White
+                                selectedLabelColor = Color.White,
+                                disabledContainerColor = Color(0x22FFFFFF),
+                                disabledLabelColor = Color(0x44FFFFFF)
                             )
                         )
                     }
@@ -220,19 +259,31 @@ fun SettingsDialog(
 
                 // Subtitles
                 Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
+                if (!hasSubtitles) {
+                    Text(
+                        text = "Notice: Subtitles are not available for this video",
+                        color = Color(0xFFFFA726),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     SubtitlesMode.values().forEach { sub ->
+                        val isEnabled = sub == SubtitlesMode.OFF || hasSubtitles
                         FilterChip(
                             selected = selectedSubtitles == sub,
-                            onClick = { onSubtitlesChange(sub) },
+                            onClick = { if (isEnabled) onSubtitlesChange(sub) },
+                            enabled = isEnabled,
                             label = { Text(sub.label) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = AccentRed,
-                                selectedLabelColor = Color.White
+                                selectedLabelColor = Color.White,
+                                disabledContainerColor = Color(0x22FFFFFF),
+                                disabledLabelColor = Color(0x44FFFFFF)
                             )
                         )
                     }

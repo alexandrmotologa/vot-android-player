@@ -66,6 +66,10 @@ class MainActivity : ComponentActivity() {
     private var selectedLanguage by mutableStateOf(TargetLanguage.RUSSIAN)
     private var isSponsorBlockEnabled by mutableStateOf(true)
 
+    private var isLiveVoiceAvailable by mutableStateOf(true)
+    private var hasSubtitles by mutableStateOf(false)
+    private var isCustomVoiceSupported by mutableStateOf(false)
+
     private var currentTranslatedAudioUrl by mutableStateOf<String?>(null)
     private var currentPlayingMode by mutableStateOf(PlayerMode.NATIVE_PLAYER)
     private var pendingOpenUrl by mutableStateOf<String?>(null)
@@ -152,6 +156,7 @@ class MainActivity : ComponentActivity() {
                                     currentVideoInfo = null
                                     loadHistory()
                                 },
+                                isLiveVoiceAvailable = isLiveVoiceAvailable,
                                 modifier = Modifier.padding(innerPadding)
                             )
                         } else {
@@ -230,6 +235,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 },
+                                isLiveVoiceAvailable = isLiveVoiceAvailable,
+                                hasSubtitles = hasSubtitles,
+                                isCustomVoiceSupported = isCustomVoiceSupported,
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
@@ -315,6 +323,9 @@ class MainActivity : ComponentActivity() {
                             onToggleAudioOnly = { playerManager.toggleAudioOnly() },
                             preferredPlayerMode = prefs.preferredPlayerMode,
                             onPlayerModeChange = { mode -> prefs.preferredPlayerMode = mode },
+                            isLiveVoiceAvailable = isLiveVoiceAvailable,
+                            hasSubtitles = hasSubtitles,
+                            isCustomVoiceSupported = isCustomVoiceSupported,
                             onDismiss = { showSettingsFromHome = false }
                         )
                     }
@@ -426,9 +437,22 @@ class MainActivity : ComponentActivity() {
                 targetLang = selectedLanguage
             )
             val cues = subtitlesResult.getOrDefault(emptyList())
+            hasSubtitles = cues.isNotEmpty()
 
             val audioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = audioUrl
+            val votObj = votResult.getOrNull()
+            if (votObj != null) {
+                if (votObj.message?.contains("обычная озвучка") == true) {
+                    isLiveVoiceAvailable = false
+                    if (selectedVoiceType == VoiceType.LIVE_VOICE) {
+                        selectedVoiceType = VoiceType.STANDARD
+                    }
+                } else {
+                    isLiveVoiceAvailable = votObj.isLivelyVoice
+                }
+            }
+            isCustomVoiceSupported = false
             isLoading = false
             if (votResult.isSuccess) {
                 statusMessage = "Translation active (Russian)"
@@ -522,10 +546,23 @@ class MainActivity : ComponentActivity() {
                         targetLang = selectedLanguage
                     )
                     val cues = subtitlesResult.getOrDefault(emptyList())
+                    hasSubtitles = cues.isNotEmpty()
 
                     isLoading = false
                     val translatedAudioUrl = votResult.getOrNull()?.url
                     currentTranslatedAudioUrl = translatedAudioUrl
+                    val votObj = votResult.getOrNull()
+                    if (votObj != null) {
+                        if (votObj.message?.contains("обычная озвучка") == true) {
+                            isLiveVoiceAvailable = false
+                            if (selectedVoiceType == VoiceType.LIVE_VOICE) {
+                                selectedVoiceType = VoiceType.STANDARD
+                            }
+                        } else {
+                            isLiveVoiceAvailable = votObj.isLivelyVoice
+                        }
+                    }
+                    isCustomVoiceSupported = false
                     if (votResult.isSuccess) {
                         statusMessage = "Translation active (Russian)"
                     } else {
@@ -599,9 +636,22 @@ class MainActivity : ComponentActivity() {
                 targetLang = selectedLanguage
             )
             val cues = subtitlesResult.getOrDefault(emptyList())
+            hasSubtitles = cues.isNotEmpty()
 
             val translatedAudioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = translatedAudioUrl
+            val votObj = votResult.getOrNull()
+            if (votObj != null) {
+                if (votObj.message?.contains("обычная озвучка") == true) {
+                    isLiveVoiceAvailable = false
+                    if (selectedVoiceType == VoiceType.LIVE_VOICE) {
+                        selectedVoiceType = VoiceType.STANDARD
+                    }
+                } else {
+                    isLiveVoiceAvailable = votObj.isLivelyVoice
+                }
+            }
+            isCustomVoiceSupported = false
             isLoading = false
             if (votResult.isSuccess) {
                 statusMessage = "Translation active (Russian)"

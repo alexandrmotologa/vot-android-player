@@ -55,6 +55,7 @@ fun YouTubeWebScreen(
     onLanguageChange: (TargetLanguage) -> Unit,
     onSwitchToNativePlayer: () -> Unit,
     onNavigateBack: () -> Unit,
+    isLiveVoiceAvailable: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -362,16 +363,28 @@ fun YouTubeWebScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         VoiceType.values().forEach { voice ->
+                            val isVoiceEnabled = voice != VoiceType.LIVE_VOICE || isLiveVoiceAvailable
                             FilterChip(
                                 selected = selectedVoiceType == voice,
                                 onClick = { onVoiceTypeChange(voice) },
+                                enabled = isVoiceEnabled,
                                 label = { Text(voice.label) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = AccentRed,
-                                    selectedLabelColor = Color.White
+                                    selectedLabelColor = Color.White,
+                                    disabledContainerColor = Color(0x11FFFFFF),
+                                    disabledLabelColor = Color.Gray
                                 )
                             )
                         }
+                    }
+                    if (!isLiveVoiceAvailable) {
+                        Text(
+                            text = "Notice: Only standard voice is provided by Yandex for this video",
+                            color = Color(0xFFE5A93C),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
