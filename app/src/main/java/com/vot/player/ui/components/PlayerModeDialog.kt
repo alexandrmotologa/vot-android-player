@@ -21,6 +21,9 @@ import com.vot.player.ui.theme.DarkCard
 import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 @Composable
 fun PlayerModeDialog(
     onSelectMode: (mode: PlayerMode, rememberChoice: Boolean) -> Unit,
@@ -32,10 +35,15 @@ fun PlayerModeDialog(
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = DarkCard),
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 440.dp)
+                .padding(16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp)
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     text = "Choose Watching Mode",

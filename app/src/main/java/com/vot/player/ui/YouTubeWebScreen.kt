@@ -13,7 +13,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.GraphicEq
@@ -40,7 +42,7 @@ import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 import com.vot.player.web.VotWebBridge
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubeWebScreen(
@@ -288,6 +290,7 @@ fun YouTubeWebScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp)
                         .padding(bottom = 32.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = "Voice-Over & Volume Controls",
@@ -320,9 +323,10 @@ fun YouTubeWebScreen(
 
                     // Voice Type (Standard vs Live)
                     Text(text = "Voice Synthesis", color = TextSecondary, fontSize = 13.sp)
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         VoiceType.values().forEach { voice ->
                             FilterChip(

@@ -85,6 +85,9 @@ fun PlayerScreen(
     val selectedQuality by playerManager.selectedQuality.collectAsState()
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     var showControls by remember { mutableStateOf(true) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
@@ -336,7 +339,7 @@ fun PlayerScreen(
             subtitleText = currentSubtitle,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (showControls) 180.dp else 40.dp)
+                .padding(bottom = if (showControls) (if (isLandscape) 135.dp else 195.dp) else 36.dp)
                 .padding(horizontal = 20.dp)
         )
 
@@ -380,7 +383,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
-                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                        .padding(horizontal = 8.dp, vertical = if (isLandscape) 6.dp else 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -394,13 +397,13 @@ fun PlayerScreen(
 
                     Column(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(1f, fill = true)
                             .padding(horizontal = 8.dp)
                     ) {
                         Text(
                             text = videoTitle,
                             color = TextPrimary,
-                            fontSize = 15.sp,
+                            fontSize = if (isLandscape) 14.sp else 15.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -408,12 +411,13 @@ fun PlayerScreen(
                         Text(
                             text = videoAuthor,
                             color = TextSecondary,
-                            fontSize = 12.sp,
-                            maxLines = 1
+                            fontSize = if (isLandscape) 11.sp else 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { playerManager.toggleAudioOnly() }) {
                             Icon(
                                 imageVector = Icons.Default.Headphones,
@@ -488,7 +492,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .padding(horizontal = if (isLandscape) 24.dp else 14.dp, vertical = if (isLandscape) 4.dp else 8.dp)
                 ) {
                     // Seekbar row
                     Row(
@@ -520,7 +524,7 @@ fun PlayerScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(if (isLandscape) 4.dp else 6.dp))
 
                     // Dual Volume Bar
                     DualVolumeBar(

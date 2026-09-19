@@ -1,26 +1,13 @@
 package com.vot.player.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +21,7 @@ import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DualVolumeBar(
     originalVolume: Float,
@@ -47,12 +35,13 @@ fun DualVolumeBar(
         modifier = modifier
             .fillMaxWidth()
             .background(Color(0xCC1A1A24), RoundedCornerShape(16.dp))
-            .padding(14.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        // Quick Presets
-        Row(
+        // Quick Presets with FlowRow to wrap cleanly on any screen width
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             PresetButton(
                 label = "Voice Only",
@@ -88,25 +77,31 @@ fun DualVolumeBar(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Original Volume Slider
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onToggleOriginalMute) {
+            IconButton(
+                onClick = onToggleOriginalMute,
+                modifier = Modifier.size(36.dp)
+            ) {
                 Icon(
                     imageVector = if (originalVolume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
                     contentDescription = "Original Volume",
-                    tint = if (originalVolume > 0f) AccentBlue else Color.Gray
+                    tint = if (originalVolume > 0f) AccentBlue else Color.Gray,
+                    modifier = Modifier.size(20.dp)
                 )
             }
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = "Orig: ${(originalVolume * 100).roundToInt()}%",
                 color = TextSecondary,
                 fontSize = 12.sp,
-                modifier = Modifier.width(68.dp)
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = 66.dp)
             )
             Slider(
                 value = originalVolume,
@@ -117,7 +112,7 @@ fun DualVolumeBar(
                     activeTrackColor = AccentBlue,
                     inactiveTrackColor = Color(0xFF333344)
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
             )
         }
 
@@ -126,19 +121,25 @@ fun DualVolumeBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = {}) {
+            IconButton(
+                onClick = {},
+                modifier = Modifier.size(36.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.RecordVoiceOver,
                     contentDescription = "Voice-over Volume",
-                    tint = AccentRed
+                    tint = AccentRed,
+                    modifier = Modifier.size(20.dp)
                 )
             }
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = "Voice: ${(voiceoverVolume * 100).roundToInt()}%",
                 color = TextPrimary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.width(68.dp)
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = 66.dp)
             )
             Slider(
                 value = voiceoverVolume,
@@ -149,7 +150,7 @@ fun DualVolumeBar(
                     activeTrackColor = AccentRed,
                     inactiveTrackColor = Color(0xFF333344)
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
             )
         }
     }
@@ -168,9 +169,14 @@ private fun PresetButton(
             contentColor = if (isSelected) AccentRed else Color.White
         ),
         shape = RoundedCornerShape(8.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         modifier = Modifier.height(30.dp)
     ) {
-        Text(text = label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            maxLines = 1,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

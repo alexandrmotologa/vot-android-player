@@ -25,6 +25,7 @@ import com.vot.player.ui.theme.DarkCard
 import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(
     selectedVoiceType: VoiceType,
@@ -58,6 +59,7 @@ fun SettingsDialog(
             colors = CardDefaults.cardColors(containerColor = DarkCard),
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = 500.dp)
                 .padding(vertical = 16.dp)
         ) {
             Column(
@@ -76,15 +78,16 @@ fun SettingsDialog(
 
                 // Default Player Mode
                 Text(text = "Default Watching Mode", color = TextSecondary, fontSize = 13.sp)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     PlayerMode.values().forEach { mode ->
                         FilterChip(
                             selected = preferredPlayerMode == mode,
                             onClick = { onPlayerModeChange(mode) },
-                            label = { Text(if (mode == PlayerMode.ASK_EVERY_TIME) "Ask" else mode.displayName.take(10)) },
+                            label = { Text(if (mode == PlayerMode.ASK_EVERY_TIME) "Ask" else mode.displayName.take(12)) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = AccentRed,
                                 selectedLabelColor = Color.White
@@ -145,9 +148,10 @@ fun SettingsDialog(
 
                 // Voice Gender Selection
                 Text(text = "Voice Gender", color = TextSecondary, fontSize = 13.sp)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     VoiceGender.values().forEach { gender ->
                         FilterChip(
@@ -162,15 +166,18 @@ fun SettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = Color(0x22FFFFFF))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Specific Voice Actor
                 Text(text = "Preferred Voice Actor", color = TextSecondary, fontSize = 13.sp)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    VoiceActor.values().take(4).forEach { actor ->
+                    VoiceActor.values().forEach { actor ->
                         FilterChip(
                             selected = selectedVoiceActor == actor,
                             onClick = { onVoiceActorChange(actor) },
@@ -189,9 +196,10 @@ fun SettingsDialog(
 
                 // Voice Type (Standard vs Live Voice)
                 Text(text = "Voice Synthesis Engine", color = TextSecondary, fontSize = 13.sp)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     VoiceType.values().forEach { voice ->
                         FilterChip(
@@ -212,9 +220,10 @@ fun SettingsDialog(
 
                 // Subtitles
                 Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     SubtitlesMode.values().forEach { sub ->
                         FilterChip(
@@ -235,9 +244,10 @@ fun SettingsDialog(
 
                 // Playback Speed
                 Text(text = "Playback Speed", color = TextSecondary, fontSize = 13.sp)
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
                         FilterChip(
