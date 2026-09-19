@@ -261,7 +261,7 @@ fun PlayerScreen(
                         onPlay = { playerManager.play() },
                         onPause = { playerManager.pause() },
                         onSeek = { posMs -> playerManager.seekTo(posMs) },
-                        onTimeUpdate = { posMs -> playerManager.syncWebPosition(posMs) },
+                        onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
                         onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
                         onScreenTap = { showControls = !showControls },
                         onFullscreenToggle = { isFs ->

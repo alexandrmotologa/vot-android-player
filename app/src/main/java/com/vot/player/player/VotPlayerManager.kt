@@ -232,8 +232,11 @@ class VotPlayerManager(
         }
     }
 
-    fun syncWebPosition(webPositionMs: Long) {
+    fun syncWebPosition(webPositionMs: Long, durationMs: Long = 0L) {
         _currentPositionMs.value = webPositionMs
+        if (durationMs > 0L) {
+            _durationMs.value = durationMs
+        }
         updateSubtitles(webPositionMs)
         if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {
             val aPos = voiceoverPlayer.currentPosition

@@ -642,6 +642,14 @@ class MainActivity : ComponentActivity() {
                 existing?.lastPositionMs ?: 0L
             }
 
+            // Start native video playback immediately with ExoPlayer
+            playerManager.prepare(
+                videoInfo = videoInfo,
+                voiceoverAudioUrl = null,
+                subtitles = emptyList(),
+                startPositionMs = resumePositionMs
+            )
+
             val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
             val votUrl = if (videoInfo.platform == PlatformType.YOUTUBE) {
                 "https://www.youtube.com/watch?v=${videoInfo.id}"
@@ -701,12 +709,10 @@ class MainActivity : ComponentActivity() {
             )
             loadHistory()
 
-            playerManager.prepare(
-                videoInfo = videoInfo,
-                voiceoverAudioUrl = translatedAudioUrl,
-                subtitles = cues,
-                startPositionMs = resumePositionMs
-            )
+            if (!translatedAudioUrl.isNullOrEmpty()) {
+                playerManager.setVoiceoverAudio(translatedAudioUrl)
+            }
+            playerManager.setSubtitles(cues)
             playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
         }
     }

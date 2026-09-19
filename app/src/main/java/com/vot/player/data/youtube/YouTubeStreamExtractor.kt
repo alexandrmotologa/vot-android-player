@@ -72,13 +72,49 @@ class YouTubeStreamExtractor(
             val videoDetails = json.optJSONObject("videoDetails")
                 ?: return@withContext Result.failure(Exception("Video details not found"))
 
-            val title = videoDetails.optString("title", "YouTube Video")
-            val author = videoDetails.optString("author", "Unknown Channel")
-            val durationSeconds = videoDetails.optString("lengthSeconds", "0").toLongOrNull() ?: 0L
+            var streamingData = json.optJSONObject("streamingData")
+            var title = videoDetails.optString("title", "YouTube Video")
+            var author = videoDetails.optString("author", "Unknown Channel")
+            var durationSeconds = videoDetails.optString("lengthSeconds", "0").toLongOrNull() ?: 0L
             val thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
-            val streamingData = json.optJSONObject("streamingData")
-                ?: return@withContext Result.failure(Exception("Streaming formats not found. Video may be restricted."))
+            // If ANDROID_VR didn't yield formats, retry with ANDROID client
+            if (streamingData == null || (streamingData.optJSONArray("formats") == null && streamingData.optJSONArray("adaptiveFormats") == null)) {
+                val fallbackRequestJson = JSONObject().apply {
+                    put("videoId", videoId)
+                    put("context", JSONObject().apply {
+                        put("client", JSONObject().apply {
+                            put("clientName", "ANDROID")
+                            put("clientVersion", "19.09.37")
+                            put("osName", "Android")
+                            put("osVersion", "14")
+                            put("hl", "en")
+                            put("gl", "US")
+                        })
+                    })
+                }
+                val fbRequest = Request.Builder()
+                    .url("https://www.youtube.com/youtubei/v1/player")
+                    .post(fallbackRequestJson.toString().toRequestBody("application/json".toMediaType()))
+                    .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip")
+                    .build()
+                val fbResponse = client.newCall(fbRequest).execute()
+                val fbBody = fbResponse.body?.string()
+                if (!fbBody.isNullOrEmpty()) {
+                    val fbJson = JSONObject(fbBody)
+                    val fbDetails = fbJson.optJSONObject("videoDetails")
+                    if (fbDetails != null) {
+                        title = fbDetails.optString("title", title)
+                        author = fbDetails.optString("author", author)
+                        durationSeconds = fbDetails.optString("lengthSeconds", durationSeconds.toString()).toLongOrNull() ?: durationSeconds
+                    }
+                    streamingData = fbJson.optJSONObject("streamingData")
+                }
+            }
+
+            if (streamingData == null) {
+                return@withContext Result.failure(Exception("Streaming formats not found. Video may be restricted."))
+            }
 
             val qualityList = mutableListOf<VideoQuality>()
             var bestProgressiveUrl: String? = null
@@ -94,7 +130,7 @@ class YouTubeStreamExtractor(
                     val qualityLabel = fmt.optString("qualityLabel", "${height}p")
                     if (url.isNotEmpty() && height > 0) {
                         qualityList.add(VideoQuality(qualityLabel, height, url, null))
-                        if (bestProgressiveUrl == null || height > 480) {
+                        if (bestProgressiveUrl == null || height >= 720) {
                             bestProgressiveUrl = url
                         }
                     }
@@ -104,7 +140,7 @@ class YouTubeStreamExtractor(
             // 2. Parse adaptive formats (video-only and audio-only)
             val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
             if (adaptiveFormats != null && adaptiveFormats.length() > 0) {
-                // Find best audio stream first
+                // Find best audio stream: prefer audio/mp4, fallback to any audio/
                 for (i in 0 until adaptiveFormats.length()) {
                     val fmt = adaptiveFormats.getJSONObject(i)
                     val mimeType = fmt.optString("mimeType")
@@ -126,7 +162,7 @@ class YouTubeStreamExtractor(
                     }
                 }
 
-                // Add adaptive video streams (1080p, 1440p, 2160p)
+                // Add adaptive video streams for all resolutions (2160p down to 144p)
                 for (i in 0 until adaptiveFormats.length()) {
                     val fmt = adaptiveFormats.getJSONObject(i)
                     val mimeType = fmt.optString("mimeType")
@@ -134,19 +170,23 @@ class YouTubeStreamExtractor(
                     val height = fmt.optInt("height", 0)
                     val qualityLabel = fmt.optString("qualityLabel", "${height}p")
 
-                    if (url.isNotEmpty() && mimeType.startsWith("video/mp4") && height >= 720) {
-                        if (qualityList.none { it.height == height }) {
+                    if (url.isNotEmpty() && mimeType.startsWith("video/") && height > 0) {
+                        val existingIndex = qualityList.indexOfFirst { it.height == height }
+                        if (existingIndex == -1) {
                             qualityList.add(VideoQuality(qualityLabel, height, url, bestAudioUrl))
+                        } else if (mimeType.startsWith("video/mp4") && !qualityList[existingIndex].videoUrl.contains("mime=video%2Fmp4")) {
+                            // Upgrade to MP4 stream if currently WebM for better hardware decoder compatibility
+                            qualityList[existingIndex] = VideoQuality(qualityLabel, height, url, bestAudioUrl)
                         }
                     }
                 }
             }
 
-            // Sort quality options descending (e.g. 1080p, 720p, 480p, 360p)
+            // Sort quality options descending (e.g. 2160p, 1440p, 1080p, 720p, 480p, 360p)
             qualityList.sortByDescending { it.height }
 
-            val primaryStreamUrl = bestProgressiveUrl 
-                ?: qualityList.firstOrNull()?.videoUrl 
+            val primaryStreamUrl = qualityList.firstOrNull()?.videoUrl 
+                ?: bestProgressiveUrl 
                 ?: streamingData.optString("hlsManifestUrl")
 
             if (primaryStreamUrl.isNullOrEmpty()) {

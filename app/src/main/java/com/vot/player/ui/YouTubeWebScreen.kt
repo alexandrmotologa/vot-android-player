@@ -85,7 +85,7 @@ fun YouTubeWebScreen(
             onPlay = { playerManager.play() },
             onPause = { playerManager.pause() },
             onSeek = { posMs -> playerManager.seekTo(posMs) },
-            onTimeUpdate = { posMs -> playerManager.syncWebPosition(posMs) },
+            onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
             onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
             onFullscreenToggle = { isFs ->
                 val act = context as? android.app.Activity
