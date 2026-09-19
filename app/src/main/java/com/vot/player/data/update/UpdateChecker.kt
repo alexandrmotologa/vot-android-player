@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.vot.player.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -24,7 +25,7 @@ class UpdateChecker(
         .build()
 ) {
     companion object {
-        const val CURRENT_VERSION = "1.0.0"
+        val CURRENT_VERSION: String get() = BuildConfig.VERSION_NAME
         private const val RELEASES_API_URL = "https://api.github.com/repos/alexandrmotologa/vot-android-player/releases/latest"
     }
 
@@ -78,8 +79,8 @@ class UpdateChecker(
     }
 
     private fun isNewerVersion(remote: String, current: String): Boolean {
-        val remoteParts = remote.split(".").mapNotNull { it.toIntOrNull() }
-        val currentParts = current.split(".").mapNotNull { it.toIntOrNull() }
+        val remoteParts = remote.removePrefix("v").trim().split(".").mapNotNull { it.toIntOrNull() }
+        val currentParts = current.removePrefix("v").trim().split(".").mapNotNull { it.toIntOrNull() }
 
         val length = maxOf(remoteParts.size, currentParts.size)
         for (i in 0 until length) {
