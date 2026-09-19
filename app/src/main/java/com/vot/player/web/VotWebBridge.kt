@@ -68,18 +68,54 @@ class VotWebBridge(
                 if (window.__vot_bridge_installed) return;
                 window.__vot_bridge_installed = true;
 
+                window.__vot_original_volume = 0.20;
+                window.__vot_seeking_until = 0;
+
+                function applyTargetVolume(video) {
+                    if (!video) return;
+                    const vol = (window.__vot_original_volume !== undefined) ? window.__vot_original_volume : 0.20;
+                    const shouldMute = (vol <= 0.01);
+                    if (video.muted !== shouldMute || Math.abs(video.volume - vol) > 0.05) {
+                        video.volume = vol;
+                        video.muted = shouldMute;
+                    }
+                }
+
                 function notifyTime(video) {
                     if (!video || !window.VotAndroidBridge) return;
+                    if (Date.now() < window.__vot_seeking_until) return; // Don't report old positions right after seeking!
                     const posMs = Math.round(video.currentTime * 1000);
                     const durMs = Math.round((video.duration || 0) * 1000);
                     window.VotAndroidBridge.onVideoTimeUpdate(posMs, durMs);
                 }
+
+                // Dedicated seek handler that interacts with YouTube's player API or HTML5 video
+                window.__vot_seekTo = function(sec) {
+                    window.__vot_seeking_until = Date.now() + 800; // block timeupdate for 800ms
+                    const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                    if (player && typeof player.seekTo === 'function') {
+                        player.seekTo(sec, true);
+                    } else {
+                        const video = document.querySelector('video');
+                        if (video) {
+                            video.currentTime = sec;
+                        }
+                    }
+                };
+
+                // Intercept volumechange: Prevents YouTube's tap-to-unmute from unmuting or resetting volume to 100%!
+                document.addEventListener('volumechange', function(e) {
+                    if (e.target && (e.target.tagName === 'VIDEO' || e.target.nodeName === 'VIDEO')) {
+                        applyTargetVolume(e.target);
+                    }
+                }, true);
 
                 // Capture phase listeners catch play/pause/timeupdate from ANY video element,
                 // even before it's hooked or if it's created dynamically!
                 document.addEventListener('play', function(e) {
                     if (e.target && (e.target.tagName === 'VIDEO' || e.target.nodeName === 'VIDEO')) {
                         if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPlay();
+                        applyTargetVolume(e.target);
                         notifyTime(e.target);
                     }
                 }, true);
@@ -87,6 +123,7 @@ class VotWebBridge(
                 document.addEventListener('playing', function(e) {
                     if (e.target && (e.target.tagName === 'VIDEO' || e.target.nodeName === 'VIDEO')) {
                         if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoPlay();
+                        applyTargetVolume(e.target);
                     }
                 }, true);
 
@@ -119,12 +156,22 @@ class VotWebBridge(
                 // Periodic time & duration sync (every 500ms) to ensure duration & position never get out of sync
                 setInterval(function() {
                     const v = document.querySelector('video');
-                    if (v && !v.paused) {
-                        notifyTime(v);
+                    if (v) {
+                        applyTargetVolume(v);
+                        if (!v.paused) {
+                            notifyTime(v);
+                        }
                     }
                 }, 500);
 
                 document.addEventListener('click', function(e) {
+                    // Re-apply target volume on user clicks to negate YouTube's tap-to-unmute
+                    const v = document.querySelector('video');
+                    if (v) {
+                        setTimeout(function() { applyTargetVolume(v); }, 50);
+                        setTimeout(function() { applyTargetVolume(v); }, 250);
+                    }
+
                     const target = e.target;
                     const fsBtn = target ? target.closest('.fullscreen-icon, button.ytp-fullscreen-button, button[aria-label*="Full screen"], button[aria-label*="Fullscreen"]') : null;
                     if (fsBtn) {
@@ -147,10 +194,10 @@ class VotWebBridge(
                 });
 
                 window.setOriginalVolume = function(vol) {
+                    window.__vot_original_volume = Math.max(0, Math.min(1, vol));
                     const video = document.querySelector('video');
                     if (video) {
-                        video.volume = Math.max(0, Math.min(1, vol));
-                        video.muted = (vol <= 0.01);
+                        applyTargetVolume(video);
                     }
                 };
             })();

@@ -285,7 +285,7 @@ fun PlayerScreen(
                         }
                         override fun seekTo(positionMs: Long) {
                             val sec = positionMs / 1000.0
-                            webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.currentTime = $sec;", null)
+                            webViewRef?.evaluateJavascript("if (window.__vot_seekTo) { window.__vot_seekTo($sec); } else { const v = document.querySelector('video'); if (v) v.currentTime = $sec; }", null)
                         }
                         override fun setVolume(volume: Float) {
                             webViewRef?.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($volume);", null)
@@ -534,20 +534,32 @@ fun PlayerScreen(
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = if (isLandscape) 24.dp else 14.dp, vertical = if (isLandscape) 4.dp else 8.dp)
                 ) {
+                    var isDraggingSlider by remember { mutableStateOf(false) }
+                    var dragPositionMs by remember { mutableStateOf(0f) }
+                    val displayPositionMs = if (isDraggingSlider) dragPositionMs.toLong() else currentPositionMs
+
                     // Seekbar row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = formatTime(currentPositionMs),
+                            text = formatTime(displayPositionMs),
                             color = Color.White,
                             fontSize = 12.sp,
                             modifier = Modifier.width(46.dp)
                         )
                         Slider(
-                            value = currentPositionMs.toFloat(),
-                            onValueChange = { playerManager.seekTo(it.toLong()) },
+                            value = if (isDraggingSlider) dragPositionMs else currentPositionMs.toFloat(),
+                            onValueChange = { newValue ->
+                                isDraggingSlider = true
+                                dragPositionMs = newValue
+                            },
+                            onValueChangeFinished = {
+                                val target = dragPositionMs.toLong()
+                                isDraggingSlider = false
+                                playerManager.seekTo(target)
+                            },
                             valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
                             colors = SliderDefaults.colors(
                                 thumbColor = AccentRed,

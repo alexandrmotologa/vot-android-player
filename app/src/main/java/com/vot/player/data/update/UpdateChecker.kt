@@ -1,9 +1,9 @@
 package com.vot.player.data.update
 
-import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
-import android.os.Environment
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.vot.player.BuildConfig
@@ -94,16 +94,27 @@ class UpdateChecker(
 
     fun downloadUpdate(context: Context, updateInfo: AppUpdateInfo) {
         try {
-            val request = DownloadManager.Request(Uri.parse(updateInfo.apkDownloadUrl))
-                .setTitle("VOT Player Update v${updateInfo.versionName}")
-                .setDescription("Downloading latest APK release...")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "VotPlayer-v${updateInfo.versionName}.apk")
-                .setMimeType("application/vnd.android.package-archive")
+            Toast.makeText(
+                context,
+                "Opening update download in browser...",
+                Toast.LENGTH_LONG
+            ).show()
 
-            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            downloadManager.enqueue(request)
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.apkDownloadUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(browserIntent)
         } catch (_: Exception) {
+            try {
+                val fallbackIntent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/alexandrmotologa/vot-android-player/releases/latest")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+            } catch (_: Exception) {
+            }
         }
     }
 }

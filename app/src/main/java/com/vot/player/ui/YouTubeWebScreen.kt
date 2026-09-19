@@ -108,7 +108,7 @@ fun YouTubeWebScreen(
             }
             override fun seekTo(positionMs: Long) {
                 val sec = positionMs / 1000.0
-                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.currentTime = $sec;", null)
+                webViewRef?.evaluateJavascript("if (window.__vot_seekTo) { window.__vot_seekTo($sec); } else { const v = document.querySelector('video'); if (v) v.currentTime = $sec; }", null)
             }
             override fun setVolume(volume: Float) {
                 webViewRef?.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($volume);", null)
