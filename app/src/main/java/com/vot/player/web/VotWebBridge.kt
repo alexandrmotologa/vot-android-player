@@ -55,8 +55,21 @@ class VotWebBridge(
             ytm-custom-control,
             .ytp-gradient-bottom,
             .ytp-gradient-top,
-            .ytp-progress-bar-container {
+            .ytp-progress-bar-container,
+            .ytp-unmute,
+            .ytm-unmute-button,
+            .player-control-overlay-unmute-button,
+            button.unmute-button,
+            .ytp-unmute-inner,
+            .ytp-unmute-box,
+            .player-control-overlay-unmute,
+            [aria-label*="unmute" i],
+            [aria-label*="Unmute" i],
+            .ytp-button[aria-label*="unmute" i] {
                 display: none !important;
+                pointer-events: none !important;
+                opacity: 0 !important;
+                visibility: hidden !important;
             }
             body, html {
                 background: #000 !important;
@@ -68,14 +81,14 @@ class VotWebBridge(
                 if (window.__vot_bridge_installed) return;
                 window.__vot_bridge_installed = true;
 
-                window.__vot_original_volume = 0.20;
+                window.__vot_original_volume = 0.0;
                 window.__vot_seeking_until = 0;
 
                 function applyTargetVolume(video) {
                     if (!video) return;
-                    const vol = (window.__vot_original_volume !== undefined) ? window.__vot_original_volume : 0.20;
+                    const vol = (window.__vot_original_volume !== undefined) ? window.__vot_original_volume : 0.0;
                     const shouldMute = (vol <= 0.01);
-                    if (video.muted !== shouldMute || Math.abs(video.volume - vol) > 0.05) {
+                    if (video.muted !== shouldMute || Math.abs(video.volume - vol) > 0.02) {
                         video.volume = vol;
                         video.muted = shouldMute;
                     }
@@ -89,21 +102,24 @@ class VotWebBridge(
                     window.VotAndroidBridge.onVideoTimeUpdate(posMs, durMs);
                 }
 
-                // Dedicated seek handler that interacts with YouTube's player API or HTML5 video
+                // Dedicated seek handler that interacts with YouTube's player API and HTML5 video
                 window.__vot_seekTo = function(sec) {
-                    window.__vot_seeking_until = Date.now() + 800; // block timeupdate for 800ms
+                    window.__vot_seeking_until = Date.now() + 1000; // block timeupdate for 1000ms during seek buffer
+                    const video = document.querySelector('video');
+                    if (video) {
+                        try {
+                            video.currentTime = sec;
+                        } catch(e) {}
+                    }
                     const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                     if (player && typeof player.seekTo === 'function') {
-                        player.seekTo(sec, true);
-                    } else {
-                        const video = document.querySelector('video');
-                        if (video) {
-                            video.currentTime = sec;
-                        }
+                        try {
+                            player.seekTo(sec, true);
+                        } catch(e) {}
                     }
                 };
 
-                // Intercept volumechange: Prevents YouTube's tap-to-unmute from unmuting or resetting volume to 100%!
+                // Intercept volumechange: Prevents YouTube's tap-to-unmute from unmuting or resetting volume!
                 document.addEventListener('volumechange', function(e) {
                     if (e.target && (e.target.tagName === 'VIDEO' || e.target.nodeName === 'VIDEO')) {
                         applyTargetVolume(e.target);
@@ -165,14 +181,24 @@ class VotWebBridge(
                 }, 500);
 
                 document.addEventListener('click', function(e) {
+                    const target = e.target;
+                    // If user clicked directly on an unmute element that escaped CSS, suppress it
+                    if (target && target.closest && target.closest('.ytp-unmute, .ytm-unmute-button, button.unmute-button, [aria-label*="unmute" i]')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+
                     // Re-apply target volume on user clicks to negate YouTube's tap-to-unmute
                     const v = document.querySelector('video');
                     if (v) {
-                        setTimeout(function() { applyTargetVolume(v); }, 50);
-                        setTimeout(function() { applyTargetVolume(v); }, 250);
+                        applyTargetVolume(v);
+                        setTimeout(function() { applyTargetVolume(v); }, 20);
+                        setTimeout(function() { applyTargetVolume(v); }, 60);
+                        setTimeout(function() { applyTargetVolume(v); }, 150);
+                        setTimeout(function() { applyTargetVolume(v); }, 300);
+                        setTimeout(function() { applyTargetVolume(v); }, 600);
                     }
 
-                    const target = e.target;
                     const fsBtn = target ? target.closest('.fullscreen-icon, button.ytp-fullscreen-button, button[aria-label*="Full screen"], button[aria-label*="Fullscreen"]') : null;
                     if (fsBtn) {
                         if (window.VotAndroidBridge) window.VotAndroidBridge.onFullscreenChanged(true);

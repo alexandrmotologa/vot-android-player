@@ -50,7 +50,7 @@ class VotPlayerManager(
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
-    private val _originalVolume = MutableStateFlow(0.20f)
+    private val _originalVolume = MutableStateFlow(0.0f)
     val originalVolume: StateFlow<Float> = _originalVolume.asStateFlow()
 
     private val _voiceoverVolume = MutableStateFlow(1.0f)
@@ -250,6 +250,14 @@ class VotPlayerManager(
         }
     }
 
+    fun syncWebSeek(webPositionMs: Long) {
+        _currentPositionMs.value = webPositionMs
+        updateSubtitles(webPositionMs)
+        if (voiceoverPlayer.mediaItemCount > 0) {
+            voiceoverPlayer.seekTo(webPositionMs)
+        }
+    }
+
     private fun setupVideoSource(videoUrl: String, audioUrl: String?, metadata: MediaMetadata) {
         val mediaItem = MediaItem.Builder()
             .setUri(videoUrl)
@@ -326,6 +334,7 @@ class VotPlayerManager(
     fun seekTo(positionMs: Long) {
         val maxDuration = videoPlayer.duration.takeIf { it > 0L }
             ?: voiceoverPlayer.duration.takeIf { it > 0L }
+            ?: _durationMs.value.takeIf { it > 0L }
             ?: Long.MAX_VALUE
         val target = positionMs.coerceIn(0L, maxDuration)
         if (videoPlayer.mediaItemCount > 0) {
@@ -341,7 +350,12 @@ class VotPlayerManager(
     }
 
     fun seekRelative(deltaMs: Long) {
-        seekTo(videoPlayer.currentPosition + deltaMs)
+        val currentPos = if (videoPlayer.mediaItemCount > 0) {
+            videoPlayer.currentPosition
+        } else {
+            _currentPositionMs.value
+        }
+        seekTo(currentPos + deltaMs)
     }
 
     fun setOriginalVolume(volume: Float) {

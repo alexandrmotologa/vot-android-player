@@ -260,7 +260,7 @@ fun PlayerScreen(
                     VotWebBridge(
                         onPlay = { playerManager.play() },
                         onPause = { playerManager.pause() },
-                        onSeek = { posMs -> playerManager.seekTo(posMs) },
+                        onSeek = { posMs -> playerManager.syncWebSeek(posMs) },
                         onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
                         onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
                         onScreenTap = { showControls = !showControls },
