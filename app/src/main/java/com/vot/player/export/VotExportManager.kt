@@ -42,6 +42,11 @@ class VotExportManager(
         title: String
     ) = withContext(Dispatchers.IO) {
         try {
+            if (videoUrl.contains("youtube.com/watch") || videoUrl.contains("m.youtube.com") || videoUrl.contains("youtu.be")) {
+                _exportState.value = ExportState.Error("Direct video download is restricted for this YouTube stream. Please use 'Export Audio Only' to save the Russian voice-over MP3 track.")
+                return@withContext
+            }
+
             _exportState.value = ExportState.Downloading(5, "Preparing download...")
 
             val safeTitle = title.replace(Regex("[^a-zA-Z0-9_\\-\\s]"), "_").take(50).trim()

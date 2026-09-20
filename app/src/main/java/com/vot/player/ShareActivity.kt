@@ -27,10 +27,16 @@ class ShareActivity : Activity() {
 
         if (Intent.ACTION_SEND == intent.action && intent.type == "text/plain") {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
-            // Check if text contains a YouTube URL
             val words = sharedText.split("\\s+".toRegex())
+            // 1. Prefer YouTube URLs if present
             for (word in words) {
                 if (YouTubeStreamExtractor.extractVideoId(word) != null) {
+                    return word
+                }
+            }
+            // 2. Fallback to any valid web URL (Twitch, TikTok, Direct Video, etc.)
+            for (word in words) {
+                if (word.startsWith("https://", ignoreCase = true) || word.startsWith("http://", ignoreCase = true)) {
                     return word
                 }
             }

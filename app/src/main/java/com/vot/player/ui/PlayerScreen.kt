@@ -1,5 +1,6 @@
 package com.vot.player.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -106,9 +107,18 @@ fun PlayerScreen(
         }
     }
 
-    // Request focus for D-Pad / TV key handling
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    // System Back Gesture handling
+    BackHandler {
+        if (showSettingsDialog) {
+            showSettingsDialog = false
+        } else if (isLandscape) {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            onNavigateBack()
+        }
     }
 
     Box(
@@ -299,6 +309,11 @@ fun PlayerScreen(
                         if (playerManager.webVideoController === controller) {
                             playerManager.webVideoController = null
                         }
+                        webViewRef?.apply {
+                            stopLoading()
+                            loadUrl("about:blank")
+                            onPause()
+                        }
                     }
                 }
 
@@ -413,7 +428,11 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        val act = context as? android.app.Activity
+                        act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        onNavigateBack()
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
