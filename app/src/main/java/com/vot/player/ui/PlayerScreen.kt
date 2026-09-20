@@ -285,8 +285,8 @@ fun PlayerScreen(
                     )
                 }
 
-                DisposableEffect(webViewRef) {
-                    val controller = object : VotPlayerManager.WebVideoController {
+                val controller = remember(embeddedUrl) {
+                    object : VotPlayerManager.WebVideoController {
                         override fun play() {
                             webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && v.paused) v.play();", null)
                         }
@@ -304,6 +304,9 @@ fun PlayerScreen(
                             webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.playbackRate = $speed;", null)
                         }
                     }
+                }
+
+                DisposableEffect(embeddedUrl) {
                     playerManager.webVideoController = controller
                     onDispose {
                         if (playerManager.webVideoController === controller) {
@@ -314,6 +317,7 @@ fun PlayerScreen(
                             loadUrl("about:blank")
                             onPause()
                         }
+                        webViewRef = null
                     }
                 }
 
@@ -362,6 +366,9 @@ fun PlayerScreen(
                             loadUrl(embeddedUrl)
                             webViewRef = this
                         }
+                    },
+                    update = { view ->
+                        view.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($originalVolume);", null)
                     },
                     modifier = Modifier.fillMaxSize()
                 )
