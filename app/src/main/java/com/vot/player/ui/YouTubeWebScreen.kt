@@ -33,6 +33,7 @@ import com.vot.player.data.model.TargetLanguage
 import com.vot.player.data.model.VoiceType
 import com.vot.player.player.VotPlayerManager
 import com.vot.player.ui.components.DualVolumeBar
+import com.vot.player.ui.components.SubtitleOverlay
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.DarkBackground
 import com.vot.player.ui.theme.DarkCard
@@ -57,6 +58,7 @@ fun YouTubeWebScreen(
     onSwitchToNativePlayer: () -> Unit,
     onNavigateBack: () -> Unit,
     isLiveVoiceAvailable: Boolean = true,
+    hasSubtitles: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -253,6 +255,16 @@ fun YouTubeWebScreen(
                 )
             }
 
+            // Subtitles Overlay
+            val currentSubtitle by playerManager.currentSubtitle.collectAsState()
+            SubtitleOverlay(
+                subtitleText = currentSubtitle,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (isLandscape) 40.dp else 90.dp)
+                    .padding(horizontal = 20.dp)
+            )
+
             // Floating VOT Controller Pill
             val isSynced = !currentTranslatedAudioUrl.isNullOrEmpty()
             val pillColor = if (isSynced) Color(0xFF1B5E20) else AccentRed
@@ -388,6 +400,42 @@ fun YouTubeWebScreen(
                             fontSize = 11.sp,
                             modifier = Modifier.padding(top = 4.dp)
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Color(0x22FFFFFF))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Subtitles Controls
+                    Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
+                    if (!hasSubtitles) {
+                        Text(
+                            text = "Notice: Subtitles are not available for this video",
+                            color = Color(0xFFE5A93C),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        SubtitlesMode.values().forEach { sub ->
+                            val isEnabled = sub == SubtitlesMode.OFF || hasSubtitles
+                            FilterChip(
+                                selected = selectedSubtitles == sub,
+                                onClick = { if (isEnabled) onSubtitlesChange(sub) },
+                                enabled = isEnabled,
+                                label = { Text(sub.label) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AccentRed,
+                                    selectedLabelColor = Color.White,
+                                    disabledContainerColor = Color(0x11FFFFFF),
+                                    disabledLabelColor = Color.Gray
+                                )
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))

@@ -2,6 +2,8 @@ package com.vot.player.data.pref
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.vot.player.data.model.SubtitlesMode
+import com.vot.player.data.model.VoiceType
 
 enum class PlayerMode(val displayName: String, val description: String) {
     ASK_EVERY_TIME("Ask every time", "Prompt to choose between Native and Web player"),
@@ -14,6 +16,8 @@ class PlayerPreferences(context: Context) {
 
     companion object {
         private const val KEY_PLAYER_MODE = "pref_player_mode"
+        private const val KEY_VOICE_TYPE = "pref_voice_type"
+        private const val KEY_SUBTITLES_MODE = "pref_subtitles_mode"
         private const val KEY_SPONSOR_BLOCK = "pref_sponsor_block"
         private const val KEY_AUDIO_ONLY = "pref_audio_only"
         private const val KEY_VOICE_GENDER = "pref_voice_gender"
@@ -40,6 +44,32 @@ class PlayerPreferences(context: Context) {
         }
         set(value) {
             prefs.edit().putString(KEY_PLAYER_MODE, value.name).commit()
+        }
+
+    var preferredVoiceType: VoiceType
+        get() {
+            val name = prefs.getString(KEY_VOICE_TYPE, VoiceType.LIVE_VOICE.name)
+            return try {
+                VoiceType.valueOf(name ?: VoiceType.LIVE_VOICE.name)
+            } catch (_: Exception) {
+                VoiceType.LIVE_VOICE
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_VOICE_TYPE, value.name).commit()
+        }
+
+    var preferredSubtitlesMode: SubtitlesMode
+        get() {
+            val name = prefs.getString(KEY_SUBTITLES_MODE, SubtitlesMode.OFF.name)
+            return try {
+                SubtitlesMode.valueOf(name ?: SubtitlesMode.OFF.name)
+            } catch (_: Exception) {
+                SubtitlesMode.OFF
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_SUBTITLES_MODE, value.name).commit()
         }
 
     var isSponsorBlockEnabled: Boolean

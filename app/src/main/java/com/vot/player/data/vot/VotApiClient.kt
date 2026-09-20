@@ -1,11 +1,13 @@
 package com.vot.player.data.vot
 
-import android.util.Base64
 import com.vot.player.data.model.SubtitleCue
 import com.vot.player.data.model.TargetLanguage
 import com.vot.player.data.model.VoiceType
 import com.vot.player.data.model.VotTranslationResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -14,8 +16,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -32,6 +37,7 @@ class VotApiClient(
     private fun rotateHost() {
         currentHostIndex = (currentHostIndex + 1) % workerHosts.size
     }
+
     companion object {
         private const val HMAC_KEY = "bt8xH3VOlb4mqf0nqAibnDOoiPlXsisf"
         private const val COMPONENT_VERSION = "26.8.3.971"
@@ -60,6 +66,18 @@ class VotApiClient(
         return signedBytes.joinToString("") { "%02x".format(it) }
     }
 
+    private fun encodeBase64(bytes: ByteArray): String {
+        return Base64.getEncoder().encodeToString(bytes)
+    }
+
+    private fun buildJsonHeaders(vararg pairs: Pair<String, String>): String {
+        val escaped = pairs.joinToString(",") { (k, v) ->
+            val safeV = v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+            "\"$k\":\"$safeV\""
+        }
+        return "{$escaped}"
+    }
+
     private suspend fun getOrCreateSession(): SessionData = withContext(Dispatchers.IO) {
         val current = activeSession
         val now = System.currentTimeMillis()
@@ -75,17 +93,14 @@ class VotApiClient(
                 val sessionBody = VotProtobuf.encodeSessionRequest(uuid, "video-translation")
                 val bodySign = signHmacSha256(sessionBody)
 
-                val innerHeaders = JSONObject().apply {
-                    put("Accept", "application/x-protobuf")
-                    put("Content-Type", "application/x-protobuf")
-                    put("User-Agent", USER_AGENT)
-                    put("Vtrans-Signature", bodySign)
-                }
-
-                val encodedHeaders = Base64.encodeToString(
-                    innerHeaders.toString().toByteArray(Charsets.UTF_8),
-                    Base64.NO_WRAP
+                val innerHeaders = buildJsonHeaders(
+                    "Accept" to "application/x-protobuf",
+                    "Content-Type" to "application/x-protobuf",
+                    "User-Agent" to USER_AGENT,
+                    "Vtrans-Signature" to bodySign
                 )
+
+                val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
 
                 val request = Request.Builder()
                     .url("https://$host/session/create")
@@ -145,26 +160,22 @@ class VotApiClient(
                     responseLang = targetLang.code,
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
-                    useLivelyVoice = voiceType == VoiceType.LIVE_VOICE,
-                    selectedVoice = preferredVoice
+                    useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE)
                 )
                 firstRequest = false
 
                 val bodySign = signHmacSha256(requestBytes)
 
-                val innerHeaders = JSONObject().apply {
-                    put("Accept", "application/x-protobuf")
-                    put("Content-Type", "application/x-protobuf")
-                    put("User-Agent", USER_AGENT)
-                    put("Sec-Vtrans-Token", "$tokenSign:$token")
-                    put("Sec-Vtrans-Sk", session.secretKey)
-                    put("Vtrans-Signature", bodySign)
-                }
-
-                val encodedHeaders = Base64.encodeToString(
-                    innerHeaders.toString().toByteArray(Charsets.UTF_8),
-                    Base64.NO_WRAP
+                val innerHeaders = buildJsonHeaders(
+                    "Accept" to "application/x-protobuf",
+                    "Content-Type" to "application/x-protobuf",
+                    "User-Agent" to USER_AGENT,
+                    "Sec-Vtrans-Token" to "$tokenSign:$token",
+                    "Sec-Vtrans-Sk" to session.secretKey,
+                    "Vtrans-Signature" to bodySign
                 )
+
+                val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
 
                 val request = Request.Builder()
                     .url("https://$workerHost$path")
@@ -238,19 +249,16 @@ class VotApiClient(
             )
             val bodySign = signHmacSha256(requestBytes)
 
-            val innerHeaders = JSONObject().apply {
-                put("Accept", "application/x-protobuf")
-                put("Content-Type", "application/x-protobuf")
-                put("User-Agent", USER_AGENT)
-                put("Sec-Vsubs-Token", "$tokenSign:$token")
-                put("Sec-Vsubs-Sk", session.secretKey)
-                put("Vsubs-Signature", bodySign)
-            }
-
-            val encodedHeaders = Base64.encodeToString(
-                innerHeaders.toString().toByteArray(Charsets.UTF_8),
-                Base64.NO_WRAP
+            val innerHeaders = buildJsonHeaders(
+                "Accept" to "application/x-protobuf",
+                "Content-Type" to "application/x-protobuf",
+                "User-Agent" to USER_AGENT,
+                "Sec-Vsubs-Token" to "$tokenSign:$token",
+                "Sec-Vsubs-Sk" to session.secretKey,
+                "Vsubs-Signature" to bodySign
             )
+
+            val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
 
             val request = Request.Builder()
                 .url("https://$workerHost$path")
@@ -260,49 +268,358 @@ class VotApiClient(
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("Subtitles request failed: HTTP ${response.code}"))
+            println("VOT getSubtitles response code: ${response.code}")
+            if (response.isSuccessful) {
+                val responseBytes = response.body?.bytes()
+                println("VOT getSubtitles responseBytes size: ${responseBytes?.size}")
+                if (responseBytes != null) {
+                    val subtitleEntries = VotProtobuf.decodeSubtitlesResponse(responseBytes)
+                    println("VOT decoded subtitleEntries: ${subtitleEntries.size} -> $subtitleEntries")
+                    var chosenUrl = ""
+
+                    if (targetLang == TargetLanguage.RUSSIAN) {
+                        chosenUrl = subtitleEntries.firstOrNull { it.translatedLanguage == "ru" && it.translatedUrl.isNotBlank() }?.translatedUrl
+                            ?: subtitleEntries.firstOrNull { it.language == "ru" && it.url.isNotBlank() }?.url
+                            ?: subtitleEntries.firstOrNull { it.translatedUrl.isNotBlank() }?.translatedUrl
+                            ?: subtitleEntries.firstOrNull { it.url.isNotBlank() }?.url
+                            ?: ""
+                    } else {
+                        chosenUrl = subtitleEntries.firstOrNull { it.language == targetLang.code && it.url.isNotBlank() }?.url
+                            ?: subtitleEntries.firstOrNull { it.url.isNotBlank() }?.url
+                            ?: ""
+                    }
+
+                    if (chosenUrl.isNotBlank()) {
+                        val subRequest = Request.Builder().url(chosenUrl).get().build()
+                        val subResponse = okHttpClient.newCall(subRequest).execute()
+                        if (subResponse.isSuccessful) {
+                            val subText = subResponse.body?.string() ?: ""
+                            val cues = parseSubtitles(subText)
+                            if (cues.isNotEmpty()) {
+                                return@withContext Result.success(cues)
+                            }
+                        }
+                    }
+                }
             }
 
-            val responseBytes = response.body?.bytes()
-                ?: return@withContext Result.failure(Exception("Empty subtitles response"))
-
-            val subtitleUrls = VotProtobuf.decodeSubtitlesResponse(responseBytes)
-            if (subtitleUrls.isEmpty()) {
-                return@withContext Result.success(emptyList())
-            }
-
-            // Download and parse the first subtitle file
-            val subUrl = subtitleUrls.first()
-            val subRequest = Request.Builder().url(subUrl).get().build()
-            val subResponse = okHttpClient.newCall(subRequest).execute()
-            val subText = subResponse.body?.string() ?: ""
-
-            val cues = parseSubtitles(subText)
-            Result.success(cues)
+            // Fallback: If Yandex subtitles were not available or empty, fetch from YouTube directly!
+            val ytCues = fetchYouTubeCaptionsFallback(videoUrl, targetLang)
+            Result.success(ytCues)
         } catch (e: Exception) {
+            // Even if Yandex service errored, try YouTube captions fallback
+            try {
+                val ytCues = fetchYouTubeCaptionsFallback(videoUrl, targetLang)
+                if (ytCues.isNotEmpty()) {
+                    return@withContext Result.success(ytCues)
+                }
+            } catch (_: Exception) {}
             Result.failure(e)
         }
     }
 
-    private fun parseSubtitles(raw: String): List<SubtitleCue> {
-        val cues = mutableListOf<SubtitleCue>()
+    private fun extractVideoId(url: String): String? {
+        val patterns = listOf(
+            Pattern.compile("(?:v=|/v/|youtu\\.be/|/embed/)([a-zA-Z0-9_-]{11})"),
+            Pattern.compile("^([a-zA-Z0-9_-]{11})$")
+        )
+        for (pattern in patterns) {
+            val matcher = pattern.matcher(url)
+            if (matcher.find()) {
+                return matcher.group(1)
+            }
+        }
+        return null
+    }
+
+    private suspend fun fetchYouTubeCaptionsFallback(
+        videoUrl: String,
+        targetLang: TargetLanguage
+    ): List<SubtitleCue> {
+        val videoId = extractVideoId(videoUrl) ?: return emptyList()
+        var rawXmlOrJson = ""
+        var isDirectTargetLang = false
+
+        // 1. Try YouTube InnerTube ANDROID_VR client (returns signed captionTracks)
         try {
-            if (raw.trim().startsWith("[")) {
-                // Yandex JSON format: [ { "start": 1.2, "end": 3.4, "text": "..." } ]
-                val array = JSONArray(raw)
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val start = (item.optDouble("start", 0.0) * 1000).toLong()
-                    val end = (item.optDouble("end", 0.0) * 1000).toLong()
-                    val text = item.optString("text", "")
-                    if (text.isNotEmpty()) {
-                        cues.add(SubtitleCue(start, end, text))
+            val requestJson = JSONObject().apply {
+                put("videoId", videoId)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "ANDROID_VR")
+                        put("clientVersion", "1.60.19")
+                        put("deviceMake", "Oculus")
+                        put("deviceModel", "Quest 3")
+                        put("osName", "Android")
+                        put("osVersion", "12")
+                        put("hl", targetLang.code)
+                        put("gl", "US")
+                    })
+                })
+            }
+
+            val request = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/player")
+                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string() ?: ""
+                val json = JSONObject(responseBody)
+                val captions = json.optJSONObject("captions")
+                    ?.optJSONObject("playerCaptionsTracklistRenderer")
+                    ?.optJSONArray("captionTracks")
+
+                if (captions != null && captions.length() > 0) {
+                    var selectedUrl = ""
+                    // Check if direct target language exists
+                    for (i in 0 until captions.length()) {
+                        val track = captions.getJSONObject(i)
+                        val lang = track.optString("languageCode", "")
+                        val vss = track.optString("vssId", "")
+                        if (lang.equals(targetLang.code, ignoreCase = true) || vss.contains(".${targetLang.code}") || vss.contains("a.${targetLang.code}")) {
+                            selectedUrl = track.optString("baseUrl", "")
+                            isDirectTargetLang = true
+                            break
+                        }
+                    }
+                    if (selectedUrl.isEmpty()) {
+                        // Fallback to English track or first track
+                        for (i in 0 until captions.length()) {
+                            val track = captions.getJSONObject(i)
+                            if (track.optString("languageCode", "").equals("en", ignoreCase = true)) {
+                                selectedUrl = track.optString("baseUrl", "")
+                                break
+                            }
+                        }
+                        if (selectedUrl.isEmpty()) {
+                            selectedUrl = captions.getJSONObject(0).optString("baseUrl", "")
+                        }
+                    }
+                    if (selectedUrl.isNotEmpty()) {
+                        val subReq = Request.Builder()
+                            .url(selectedUrl)
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                            .build()
+                        val subResp = okHttpClient.newCall(subReq).execute()
+                        if (subResp.isSuccessful) {
+                            rawXmlOrJson = subResp.body?.string() ?: ""
+                        }
                     }
                 }
-            } else if (raw.contains("-->")) {
-                // VTT / SRT format
-                val lines = raw.lines()
+            }
+        } catch (_: Exception) {}
+
+        // 2. Fallback: Parse watch page HTML for ytInitialPlayerResponse
+        if (rawXmlOrJson.isEmpty()) {
+            try {
+                val pageReq = Request.Builder()
+                    .url("https://www.youtube.com/watch?v=$videoId")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+                    .header("Accept-Language", "${targetLang.code},en;q=0.9")
+                    .build()
+                val pageResp = okHttpClient.newCall(pageReq).execute()
+                val html = pageResp.body?.string() ?: ""
+                val p = Pattern.compile("ytInitialPlayerResponse\\s*=\\s*(\\{.+?\\});")
+                val m = p.matcher(html)
+                if (m.find()) {
+                    val pJson = JSONObject(m.group(1) ?: "{}")
+                    val capTracks = pJson.optJSONObject("captions")
+                        ?.optJSONObject("playerCaptionsTracklistRenderer")
+                        ?.optJSONArray("captionTracks")
+                    if (capTracks != null && capTracks.length() > 0) {
+                        var chosenUrl = ""
+                        for (i in 0 until capTracks.length()) {
+                            val track = capTracks.getJSONObject(i)
+                            val lang = track.optString("languageCode", "")
+                            if (lang.equals(targetLang.code, ignoreCase = true)) {
+                                chosenUrl = track.optString("baseUrl", "")
+                                isDirectTargetLang = true
+                                break
+                            }
+                        }
+                        if (chosenUrl.isEmpty()) {
+                            chosenUrl = capTracks.getJSONObject(0).optString("baseUrl", "")
+                        }
+                        if (chosenUrl.isNotEmpty()) {
+                            val trackReq = Request.Builder()
+                                .url(chosenUrl)
+                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                                .build()
+                            val trackResp = okHttpClient.newCall(trackReq).execute()
+                            if (trackResp.isSuccessful) {
+                                rawXmlOrJson = trackResp.body?.string() ?: ""
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (rawXmlOrJson.isEmpty()) return emptyList()
+
+        val parsedCues = parseSubtitles(rawXmlOrJson)
+        if (parsedCues.isEmpty()) return emptyList()
+
+        if (isDirectTargetLang || targetLang == TargetLanguage.ENGLISH) {
+            return parsedCues
+        }
+
+        // Translate cues to Russian or selected target language
+        return translateCues(parsedCues, targetLang.code)
+    }
+
+    private suspend fun translateCues(
+        cues: List<SubtitleCue>,
+        targetLangCode: String = "ru"
+    ): List<SubtitleCue> = coroutineScope {
+        if (cues.isEmpty()) return@coroutineScope emptyList()
+        val batchSize = 40
+        val batches = cues.chunked(batchSize)
+
+        val deferreds = batches.map { batch ->
+            async(Dispatchers.IO) {
+                val combinedText = batch.joinToString("\n") { it.text.replace("\n", " ").trim() }
+                try {
+                    val encoded = URLEncoder.encode(combinedText, "UTF-8")
+                    val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetLangCode&dt=t&q=$encoded"
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+                        .build()
+                    val response = okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val bodyStr = response.body?.string() ?: ""
+                        val jsonArray = JSONArray(bodyStr)
+                        val transArray = jsonArray.optJSONArray(0)
+                        val sb = StringBuilder()
+                        if (transArray != null) {
+                            for (k in 0 until transArray.length()) {
+                                val part = transArray.optJSONArray(k)
+                                val piece = part?.optString(0, "") ?: ""
+                                sb.append(piece)
+                            }
+                        }
+                        val transLines = sb.toString().trim().lines()
+                        return@async batch.mapIndexed { j, cue ->
+                            val transLine = if (j < transLines.size && transLines[j].isNotBlank()) transLines[j].trim() else cue.text
+                            SubtitleCue(cue.startTimeMs, cue.endTimeMs, transLine)
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Fallback to original cues if batch translation fails
+                }
+                batch
+            }
+        }
+        deferreds.awaitAll().flatten()
+    }
+
+    fun parseSubtitles(raw: String): List<SubtitleCue> {
+        val cues = mutableListOf<SubtitleCue>()
+        val trimmed = raw.trim()
+        try {
+            if (trimmed.startsWith("{")) {
+                val json = JSONObject(trimmed)
+                // Format A: Yandex JSON { "subtitles": [ ... ] }
+                if (json.has("subtitles")) {
+                    val arr = json.getJSONArray("subtitles")
+                    for (i in 0 until arr.length()) {
+                        val item = arr.getJSONObject(i)
+                        val startMs = when {
+                            item.has("startMs") -> item.optLong("startMs", 0L)
+                            item.has("start") -> (item.optDouble("start", 0.0) * 1000).toLong()
+                            else -> 0L
+                        }
+                        val endMs = when {
+                            item.has("endMs") -> item.optLong("endMs", 0L)
+                            item.has("end") -> (item.optDouble("end", 0.0) * 1000).toLong()
+                            item.has("durationMs") -> startMs + item.optLong("durationMs", 0L)
+                            item.has("duration") -> startMs + (item.optDouble("duration", 0.0) * 1000).toLong()
+                            else -> startMs + 3000L
+                        }
+                        val text = item.optString("text", "")
+                        if (text.isNotBlank()) {
+                            cues.add(SubtitleCue(startMs, endMs, text.trim()))
+                        }
+                    }
+                }
+                // Format B: YouTube json3 { "events": [ { "tStartMs": ..., "dDurationMs": ..., "segs": [...] } ] }
+                else if (json.has("events")) {
+                    val events = json.getJSONArray("events")
+                    for (i in 0 until events.length()) {
+                        val event = events.getJSONObject(i)
+                        val startMs = event.optLong("tStartMs", 0L)
+                        val durMs = event.optLong("dDurationMs", 0L)
+                        val endMs = startMs + durMs
+                        if (event.has("segs")) {
+                            val segs = event.getJSONArray("segs")
+                            val textBuilder = StringBuilder()
+                            for (s in 0 until segs.length()) {
+                                textBuilder.append(segs.getJSONObject(s).optString("utf8", ""))
+                            }
+                            val text = textBuilder.toString().replace("\n", " ").trim()
+                            if (text.isNotBlank()) {
+                                cues.add(SubtitleCue(startMs, endMs, text))
+                            }
+                        }
+                    }
+                }
+            } else if (trimmed.startsWith("[")) {
+                // Format C: JSON Array [ { "start": 1.2, "end": 3.4, "text": "..." } ]
+                val array = JSONArray(trimmed)
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val startMs = when {
+                        item.has("startMs") -> item.optLong("startMs", 0L)
+                        item.has("start") -> (item.optDouble("start", 0.0) * 1000).toLong()
+                        else -> 0L
+                    }
+                    val endMs = when {
+                        item.has("endMs") -> item.optLong("endMs", 0L)
+                        item.has("end") -> (item.optDouble("end", 0.0) * 1000).toLong()
+                        item.has("durationMs") -> startMs + item.optLong("durationMs", 0L)
+                        item.has("duration") -> startMs + (item.optDouble("duration", 0.0) * 1000).toLong()
+                        else -> startMs + 3000L
+                    }
+                    val text = item.optString("text", "")
+                    if (text.isNotBlank()) {
+                        cues.add(SubtitleCue(startMs, endMs, text.trim()))
+                    }
+                }
+            } else if (trimmed.contains("<p t=") || trimmed.contains("<text start=")) {
+                // Format D: YouTube XML timedtext format
+                val pPattern = Pattern.compile("<(?:p|text)\\s+[^>]*(?:t|start)=\"([0-9.]+)\"[^>]*?(?:(?:d|dur)=\"([0-9.]+)\")?[^>]*>(.*?)</(?:p|text)>", Pattern.DOTALL)
+                val matcher = pPattern.matcher(trimmed)
+                while (matcher.find()) {
+                    val tRaw = matcher.group(1) ?: "0"
+                    val dRaw = matcher.group(2)
+                    val content = matcher.group(3) ?: ""
+                    val startMs = if (tRaw.contains(".")) (tRaw.toDouble() * 1000).toLong() else (tRaw.toLongOrNull() ?: 0L)
+                    val durMs = if (dRaw != null) {
+                        if (dRaw.contains(".")) (dRaw.toDouble() * 1000).toLong() else (dRaw.toLongOrNull() ?: 3000L)
+                    } else 3000L
+                    val cleanText = content
+                        .replace("&amp;", "&")
+                        .replace("&quot;", "\"")
+                        .replace("&#39;", "'")
+                        .replace("&apos;", "'")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">")
+                        .replace("&#([0-9]+);".toRegex()) { mr ->
+                            mr.groupValues[1].toIntOrNull()?.toChar()?.toString() ?: ""
+                        }
+                        .replace("<[^>]+>".toRegex(), "")
+                        .trim()
+                    if (cleanText.isNotBlank()) {
+                        cues.add(SubtitleCue(startMs, startMs + durMs, cleanText))
+                    }
+                }
+            } else if (trimmed.contains("-->")) {
+                // Format E: VTT / SRT format
+                val lines = trimmed.lines()
                 var i = 0
                 while (i < lines.size) {
                     val line = lines[i].trim()
@@ -316,7 +633,12 @@ class VotApiClient(
                             textLines.add(lines[i].trim())
                             i++
                         }
-                        cues.add(SubtitleCue(startMs, endMs, textLines.joinToString(" ")))
+                        val text = textLines.joinToString(" ")
+                            .replace("<[^>]+>".toRegex(), "")
+                            .trim()
+                        if (text.isNotBlank()) {
+                            cues.add(SubtitleCue(startMs, endMs, text))
+                        }
                     }
                     i++
                 }
@@ -346,3 +668,4 @@ class VotApiClient(
         }
     }
 }
+

@@ -116,23 +116,29 @@ object VotProtobuf {
 
     fun encodeTranslationRequest(
         url: String,
-        duration: Double,
+        duration: Double = 0.0,
         responseLang: String = "ru",
         requestLang: String = "en",
         firstRequest: Boolean = true,
         useLivelyVoice: Boolean = false,
-        selectedVoice: String = ""
+        videoTitle: String = ""
     ): ByteArray {
         val out = ByteArrayOutputStream()
         writeString(out, 3, url)
         writeBool(out, 5, firstRequest)
         writeDouble(out, 6, duration)
+        writeBool(out, 7, true) // unknown0 = true (CRITICAL for Yandex VOT protocol)
         writeString(out, 8, requestLang)
-        if (selectedVoice.isNotEmpty()) {
-            writeString(out, 13, selectedVoice)
-        }
         writeString(out, 14, responseLang)
-        writeBool(out, 18, useLivelyVoice)
+        writeBool(out, 15, true) // unknown2 = true
+        writeTag(out, 16, 0) // configVersion tag (field 16, wire 0)
+        writeVarint(out, 2) // configVersion = 2 (CRITICAL for Live Voice generation)
+        if (useLivelyVoice) {
+            writeBool(out, 18, true)
+        }
+        if (videoTitle.isNotEmpty()) {
+            writeString(out, 19, videoTitle)
+        }
         return out.toByteArray()
     }
 
@@ -189,9 +195,17 @@ object VotProtobuf {
         return out.toByteArray()
     }
 
-    fun decodeSubtitlesResponse(bytes: ByteArray): List<String> {
+    data class SubtitleEntry(
+        val language: String,
+        val url: String,
+        val hasTranslation: Boolean,
+        val translatedLanguage: String,
+        val translatedUrl: String
+    )
+
+    fun decodeSubtitlesResponse(bytes: ByteArray): List<SubtitleEntry> {
         val stream = ByteArrayInputStream(bytes)
-        val subtitleUrls = mutableListOf<String>()
+        val entries = mutableListOf<SubtitleEntry>()
 
         while (stream.available() > 0) {
             val tag = readVarint(stream).toInt()
@@ -204,27 +218,47 @@ object VotProtobuf {
                 val subBytes = ByteArray(len)
                 stream.read(subBytes)
                 val subStream = ByteArrayInputStream(subBytes)
-                var translatedUrl = ""
+                var lang = ""
+                var url = ""
+                var hasTrans = false
+                var transLang = ""
+                var transUrl = ""
 
                 while (subStream.available() > 0) {
                     val subTag = readVarint(subStream).toInt()
                     val subField = subTag ushr 3
                     val subWire = subTag and 7
-                    if (subField == 5 && subWire == 2) {
-                        val strLen = readVarint(subStream).toInt()
-                        translatedUrl = readString(subStream, strLen)
-                    } else {
-                        skipField(subStream, subWire)
+                    when (subField) {
+                        1 -> {
+                            val strLen = readVarint(subStream).toInt()
+                            lang = readString(subStream, strLen)
+                        }
+                        2 -> {
+                            val strLen = readVarint(subStream).toInt()
+                            url = readString(subStream, strLen)
+                        }
+                        3 -> {
+                            hasTrans = readVarint(subStream) != 0L
+                        }
+                        4 -> {
+                            val strLen = readVarint(subStream).toInt()
+                            transLang = readString(subStream, strLen)
+                        }
+                        5 -> {
+                            val strLen = readVarint(subStream).toInt()
+                            transUrl = readString(subStream, strLen)
+                        }
+                        else -> skipField(subStream, subWire)
                     }
                 }
 
-                if (translatedUrl.isNotEmpty()) {
-                    subtitleUrls.add(translatedUrl)
+                if (url.isNotEmpty() || transUrl.isNotEmpty()) {
+                    entries.add(SubtitleEntry(lang, url, hasTrans, transLang, transUrl))
                 }
             } else {
                 skipField(stream, wire)
             }
         }
-        return subtitleUrls
+        return entries
     }
 }

@@ -112,6 +112,8 @@ class MainActivity : ComponentActivity() {
         selectedVoiceGender = VoiceGender.values().firstOrNull { it.code == prefs.preferredVoiceGender } ?: VoiceGender.AUTO
         selectedVoiceActor = VoiceActor.values().firstOrNull { it.voiceId == prefs.preferredVoiceActor } ?: VoiceActor.AUTO
         preferredPlayerMode = prefs.preferredPlayerMode
+        selectedVoiceType = prefs.preferredVoiceType
+        selectedSubtitles = prefs.preferredSubtitlesMode
 
         playerManager = VotPlayerManager(
             context = this,
@@ -162,12 +164,14 @@ class MainActivity : ComponentActivity() {
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
+                                    prefs.preferredVoiceType = newVoice
                                     activeVideoUrl?.let { openYouTubeWebView(it) }
                                 },
                                 selectedSubtitles = selectedSubtitles,
                                 onSubtitlesChange = { newSubs ->
                                     selectedSubtitles = newSubs
-                                    playerManager.setSubtitlesEnabled(newSubs == SubtitlesMode.RUSSIAN)
+                                    prefs.preferredSubtitlesMode = newSubs
+                                    playerManager.setSubtitlesEnabled(newSubs != SubtitlesMode.OFF)
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
@@ -184,6 +188,7 @@ class MainActivity : ComponentActivity() {
                                     loadHistory()
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
+                                hasSubtitles = hasSubtitles,
                                 modifier = Modifier.padding(innerPadding)
                             )
                         } else {
@@ -199,6 +204,7 @@ class MainActivity : ComponentActivity() {
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
+                                    prefs.preferredVoiceType = newVoice
                                     activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 selectedVoiceGender = selectedVoiceGender,
@@ -216,6 +222,7 @@ class MainActivity : ComponentActivity() {
                                 selectedSubtitles = selectedSubtitles,
                                 onSubtitlesChange = { newSubs ->
                                     selectedSubtitles = newSubs
+                                    prefs.preferredSubtitlesMode = newSubs
                                     playerManager.setSubtitlesEnabled(newSubs != SubtitlesMode.OFF)
                                 },
                                 selectedLanguage = selectedLanguage,
@@ -336,7 +343,10 @@ class MainActivity : ComponentActivity() {
                     if (showSettingsFromHome) {
                         SettingsDialog(
                             selectedVoiceType = selectedVoiceType,
-                            onVoiceTypeChange = { selectedVoiceType = it },
+                            onVoiceTypeChange = { 
+                                selectedVoiceType = it 
+                                prefs.preferredVoiceType = it
+                            },
                             selectedVoiceGender = selectedVoiceGender,
                             onVoiceGenderChange = { gender ->
                                 selectedVoiceGender = gender
@@ -350,6 +360,7 @@ class MainActivity : ComponentActivity() {
                             selectedSubtitles = selectedSubtitles,
                             onSubtitlesChange = { 
                                 selectedSubtitles = it
+                                prefs.preferredSubtitlesMode = it
                                 playerManager.setSubtitlesEnabled(it != SubtitlesMode.OFF)
                             },
                             selectedLanguage = selectedLanguage,
@@ -508,9 +519,10 @@ class MainActivity : ComponentActivity() {
                     isLiveVoiceAvailable = false
                     if (selectedVoiceType == VoiceType.LIVE_VOICE) {
                         selectedVoiceType = VoiceType.STANDARD
+                        prefs.preferredVoiceType = VoiceType.STANDARD
                     }
                 } else {
-                    isLiveVoiceAvailable = votObj.isLivelyVoice
+                    isLiveVoiceAvailable = true
                 }
             }
             isCustomVoiceSupported = false
@@ -619,9 +631,10 @@ class MainActivity : ComponentActivity() {
                             isLiveVoiceAvailable = false
                             if (selectedVoiceType == VoiceType.LIVE_VOICE) {
                                 selectedVoiceType = VoiceType.STANDARD
+                                prefs.preferredVoiceType = VoiceType.STANDARD
                             }
                         } else {
-                            isLiveVoiceAvailable = votObj.isLivelyVoice
+                            isLiveVoiceAvailable = true
                         }
                     }
                     isCustomVoiceSupported = false
@@ -716,9 +729,10 @@ class MainActivity : ComponentActivity() {
                     isLiveVoiceAvailable = false
                     if (selectedVoiceType == VoiceType.LIVE_VOICE) {
                         selectedVoiceType = VoiceType.STANDARD
+                        prefs.preferredVoiceType = VoiceType.STANDARD
                     }
                 } else {
-                    isLiveVoiceAvailable = votObj.isLivelyVoice
+                    isLiveVoiceAvailable = true
                 }
             }
             isCustomVoiceSupported = false

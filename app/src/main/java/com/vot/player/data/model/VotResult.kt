@@ -9,10 +9,12 @@ data class VotTranslationResult(
     val isLivelyVoice: Boolean = false,
     val message: String? = null
 ) {
-    val isSuccess: Boolean get() = status == 1 && !url.isNullOrEmpty()
-    val isWaiting: Boolean get() = status == 2 || status == 6 || (status == 0 && remainingTime > 0)
-    val isAudioRequested: Boolean get() = status == 3
-    val isFailed: Boolean get() = status == 5 || (status == 0 && remainingTime <= 0 && !message.isNullOrEmpty())
+    // Status 1 = FINISHED, Status 5 = PART_CONTENT (both have playable audio url)
+    val isSuccess: Boolean get() = (status == 1 || status == 5) && !url.isNullOrEmpty()
+    // Status 2 = WAITING, Status 3 = LONG_WAITING, Status 6 = AUDIO_REQUESTED
+    val isWaiting: Boolean get() = status == 2 || status == 3 || status == 6 || (status == 0 && remainingTime > 0)
+    val isAudioRequested: Boolean get() = status == 6
+    val isFailed: Boolean get() = (status == 0 && remainingTime <= 0 && !message.isNullOrEmpty()) || (status != 1 && status != 2 && status != 3 && status != 5 && status != 6)
 }
 
 data class SubtitleCue(
