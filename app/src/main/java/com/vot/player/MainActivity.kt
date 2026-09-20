@@ -190,8 +190,12 @@ class MainActivity : ComponentActivity() {
                                 playerManager = playerManager,
                                 videoTitle = info.title,
                                 videoAuthor = info.author,
+                                embeddedUrl = if (info.platform == PlatformType.YOUTUBE) {
+                                    "https://m.youtube.com/watch?v=${info.id}"
+                                } else if (info.streamUrl.startsWith("http")) {
+                                    info.streamUrl
+                                } else null,
                                 thumbnailUrl = info.thumbnailUrl,
-                                embeddedUrl = if (info.streamUrl.startsWith("http")) info.streamUrl else null,
                                 statusMessage = statusMessage,
                                 isLoading = isLoading,
                                 selectedVoiceType = selectedVoiceType,

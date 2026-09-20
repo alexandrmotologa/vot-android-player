@@ -90,6 +90,8 @@ fun PlayerScreen(
     val availableQualities by playerManager.availableQualities.collectAsState()
     val selectedQuality by playerManager.selectedQuality.collectAsState()
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
+    val hasVideoMedia by playerManager.hasVideoMedia.collectAsState()
+    val hasVideoError by playerManager.hasVideoError.collectAsState()
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -253,12 +255,21 @@ fun PlayerScreen(
                         )
                     }
                 }
-            } else if (playerManager.videoPlayer.mediaItemCount > 0) {
+            } else if (hasVideoMedia && !hasVideoError) {
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
                             player = playerManager.videoPlayer
                             useController = false
+                        }
+                    },
+                    update = { view ->
+                        if (view.player != playerManager.videoPlayer) {
+                            view.player = playerManager.videoPlayer
                         }
                     },
                     modifier = Modifier.fillMaxSize()
