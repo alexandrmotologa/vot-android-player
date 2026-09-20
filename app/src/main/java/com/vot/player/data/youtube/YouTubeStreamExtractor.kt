@@ -185,12 +185,7 @@ class YouTubeStreamExtractor(
             // Sort quality options descending (e.g. 2160p, 1440p, 1080p, 720p, 480p, 360p)
             qualityList.sortByDescending { it.height }
 
-            val preferredDefault = qualityList.find { it.height == 720 }
-                ?: qualityList.find { it.height == 1080 }
-                ?: qualityList.firstOrNull()
-
-            val primaryStreamUrl = preferredDefault?.videoUrl 
-                ?: qualityList.firstOrNull()?.videoUrl 
+            val primaryStreamUrl = qualityList.firstOrNull()?.videoUrl 
                 ?: bestProgressiveUrl 
                 ?: streamingData.optString("hlsManifestUrl")
 

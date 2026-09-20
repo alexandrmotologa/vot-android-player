@@ -178,13 +178,7 @@ class VotPlayerManager(
         subtitleCues = subtitles
         _availableQualities.value = videoInfo.availableQualities
 
-        if (videoInfo.durationSeconds > 0L) {
-            _durationMs.value = videoInfo.durationSeconds * 1000L
-        }
-
-        val defaultQuality = videoInfo.availableQualities.find { it.height == 720 }
-            ?: videoInfo.availableQualities.find { it.height == 1080 }
-            ?: videoInfo.availableQualities.firstOrNull()
+        val defaultQuality = videoInfo.availableQualities.firstOrNull()
         _selectedQuality.value = defaultQuality
 
         setupVideoSource(
@@ -274,7 +268,7 @@ class VotPlayerManager(
             val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
             val audioItem = MediaItem.fromUri(audioUrl)
             val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(audioItem)
-            val mergedSource = MergingMediaSource(true, true, videoSource, audioSource)
+            val mergedSource = MergingMediaSource(videoSource, audioSource)
             videoPlayer.setMediaSource(mergedSource)
         } else {
             val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
@@ -333,29 +327,14 @@ class VotPlayerManager(
         }
     }
 
-    fun syncWebPlay() {
-        _isPlaying.value = true
-        if (voiceoverPlayer.mediaItemCount > 0) {
-            voiceoverPlayer.playWhenReady = true
-            voiceoverPlayer.play()
-        }
-    }
-
-    fun syncWebPause() {
-        _isPlaying.value = false
-        if (voiceoverPlayer.mediaItemCount > 0) {
-            voiceoverPlayer.pause()
-        }
-    }
-
     fun togglePlayPause() {
         if (_isPlaying.value) pause() else play()
     }
 
     fun seekTo(positionMs: Long) {
-        val maxDuration = _durationMs.value.takeIf { it > 0L }
-            ?: videoPlayer.duration.takeIf { it > 0L }
+        val maxDuration = videoPlayer.duration.takeIf { it > 0L }
             ?: voiceoverPlayer.duration.takeIf { it > 0L }
+            ?: _durationMs.value.takeIf { it > 0L }
             ?: Long.MAX_VALUE
         val target = positionMs.coerceIn(0L, maxDuration)
         if (videoPlayer.mediaItemCount > 0) {

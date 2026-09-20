@@ -67,25 +67,23 @@ fun YouTubeWebScreen(
     val originalVolume by playerManager.originalVolume.collectAsState()
     val voiceoverVolume by playerManager.voiceoverVolume.collectAsState()
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-
     // Handle back button: go back in web history if possible, else exit to Home
     BackHandler {
         if (webViewRef?.canGoBack() == true) {
             webViewRef?.goBack()
         } else {
-            val act = context as? android.app.Activity
-            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             onNavigateBack()
         }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     val bridge = remember {
         VotWebBridge(
-            onPlay = { playerManager.syncWebPlay() },
-            onPause = { playerManager.syncWebPause() },
+            onPlay = { playerManager.play() },
+            onPause = { playerManager.pause() },
             onSeek = { posMs -> playerManager.syncWebSeek(posMs) },
             onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
             onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
@@ -124,11 +122,6 @@ fun YouTubeWebScreen(
             if (playerManager.webVideoController === controller) {
                 playerManager.webVideoController = null
             }
-            webViewRef?.apply {
-                stopLoading()
-                loadUrl("about:blank")
-                onPause()
-            }
         }
     }
 
@@ -145,11 +138,7 @@ fun YouTubeWebScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        val act = context as? android.app.Activity
-                        act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                        onNavigateBack()
-                    }) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
