@@ -23,13 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -45,7 +39,6 @@ import com.vot.player.ui.components.SubtitleOverlay
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
-import com.vot.player.web.VotWebBridge
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -91,8 +84,6 @@ fun PlayerScreen(
     val availableQualities by playerManager.availableQualities.collectAsState()
     val selectedQuality by playerManager.selectedQuality.collectAsState()
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
-    val hasVideoMedia by playerManager.hasVideoMedia.collectAsState()
-    val hasVideoError by playerManager.hasVideoError.collectAsState()
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -257,72 +248,15 @@ fun PlayerScreen(
                     }
                 }
             } else {
-                // Mode 1: Pure Native Video Playback with ExoPlayer
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
                             player = playerManager.videoPlayer
                             useController = false
                         }
                     },
-                    update = { view ->
-                        if (view.player != playerManager.videoPlayer) {
-                            view.player = playerManager.videoPlayer
-                        }
-                    },
                     modifier = Modifier.fillMaxSize()
                 )
-
-                // Error Overlay if all stream formats fail
-                if (hasVideoError && !hasVideoMedia) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.85f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = AccentRed,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Playback issue with current quality",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Tap below to retry with standard resolution.",
-                                color = TextSecondary,
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = {
-                                    val q = availableQualities.find { it.height <= 480 }
-                                        ?: availableQualities.firstOrNull()
-                                    if (q != null) playerManager.changeQuality(q)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
-                            ) {
-                                Text("Retry (360p / 480p)")
-                            }
-                        }
-                    }
-                }
             }
         }
 

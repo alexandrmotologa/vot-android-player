@@ -71,12 +71,6 @@ class VotPlayerManager(
     private val _isAudioOnly = MutableStateFlow(false)
     val isAudioOnly: StateFlow<Boolean> = _isAudioOnly.asStateFlow()
 
-    private val _hasVideoMedia = MutableStateFlow(false)
-    val hasVideoMedia: StateFlow<Boolean> = _hasVideoMedia.asStateFlow()
-
-    private val _hasVideoError = MutableStateFlow(false)
-    val hasVideoError: StateFlow<Boolean> = _hasVideoError.asStateFlow()
-
     private var sponsorSegments: List<SponsorSegment> = emptyList()
     private var isSponsorBlockEnabled: Boolean = true
     var onSponsorSkipped: ((category: String) -> Unit)? = null
@@ -87,14 +81,7 @@ class VotPlayerManager(
     private var isSubtitlesEnabled: Boolean = false
     private var syncJob: Job? = null
     private var lastNonZeroOriginalVolume: Float = 0.20f
-    private val upstreamDataSourceFactory = DefaultDataSource.Factory(
-        context,
-        androidx.media3.datasource.DefaultHttpDataSource.Factory()
-            .setUserAgent("com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
-    )
+    private val upstreamDataSourceFactory = DefaultDataSource.Factory(context)
     private val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
         .setCache(VotMediaCache.getCache(context))
         .setUpstreamDataSourceFactory(upstreamDataSourceFactory)
@@ -142,35 +129,11 @@ class VotPlayerManager(
                 }
             }
 
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                android.util.Log.e("VotPlayerManager", "Video player error: ${error.errorCodeName} (${error.errorCode})", error)
-                val currentQ = _selectedQuality.value
-                val fallbackQ = _availableQualities.value
-                    .filter { it != currentQ && it.height < (currentQ?.height ?: 1080) }
-                    .maxByOrNull { it.height }
-                    ?: _availableQualities.value.firstOrNull { it != currentQ }
-
-                if (fallbackQ != null) {
-                    android.util.Log.i("VotPlayerManager", "Falling back from ${currentQ?.label} to ${fallbackQ.label}")
-                    changeQuality(fallbackQ)
-                } else {
-                    _hasVideoError.value = true
-                    _hasVideoMedia.value = false
-                }
-            }
-
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
-                    _hasVideoMedia.value = true
-                    _hasVideoError.value = false
-                    val dur = videoPlayer.duration
-                    if (dur > 0L) {
-                        _durationMs.value = dur
-                    }
+                    _durationMs.value = videoPlayer.duration.coerceAtLeast(0L)
                 } else if (playbackState == Player.STATE_BUFFERING) {
                     voiceoverPlayer.pause()
-                } else if (playbackState == Player.STATE_ENDED) {
-                    _isPlaying.value = false
                 }
             }
         })
@@ -302,41 +265,21 @@ class VotPlayerManager(
     }
 
     private fun setupVideoSource(videoUrl: String, audioUrl: String?, metadata: MediaMetadata) {
-        val isHls = videoUrl.contains("hls_variant") || videoUrl.endsWith(".m3u8")
-
         val mediaItem = MediaItem.Builder()
             .setUri(videoUrl)
-            .apply {
-                if (isHls) {
-                    setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
-                }
-            }
             .setMediaMetadata(metadata)
             .build()
 
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(upstreamDataSourceFactory)
-
-        if (!isHls && !audioUrl.isNullOrEmpty()) {
-            val videoItem = MediaItem.Builder()
-                .setUri(videoUrl)
-                .setMediaMetadata(metadata)
-                .build()
-            val videoSource = mediaSourceFactory.createMediaSource(videoItem)
-
-            val audioItem = MediaItem.Builder()
-                .setUri(audioUrl)
-                .build()
-            val audioSource = mediaSourceFactory.createMediaSource(audioItem)
-
+        if (!audioUrl.isNullOrEmpty()) {
+            val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
+            val audioItem = MediaItem.fromUri(audioUrl)
+            val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(audioItem)
             val mergedSource = MergingMediaSource(true, true, videoSource, audioSource)
             videoPlayer.setMediaSource(mergedSource)
         } else {
-            val videoSource = mediaSourceFactory.createMediaSource(mediaItem)
+            val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
             videoPlayer.setMediaSource(videoSource)
         }
-
-        _hasVideoMedia.value = true
-        _hasVideoError.value = false
         videoPlayer.prepare()
     }
 
@@ -385,6 +328,21 @@ class VotPlayerManager(
         } else {
             webVideoController?.pause()
         }
+        if (voiceoverPlayer.mediaItemCount > 0) {
+            voiceoverPlayer.pause()
+        }
+    }
+
+    fun syncWebPlay() {
+        _isPlaying.value = true
+        if (voiceoverPlayer.mediaItemCount > 0) {
+            voiceoverPlayer.playWhenReady = true
+            voiceoverPlayer.play()
+        }
+    }
+
+    fun syncWebPause() {
+        _isPlaying.value = false
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.pause()
         }
@@ -498,7 +456,7 @@ class VotPlayerManager(
         syncJob = scope.launch(Dispatchers.Main) {
             var saveCounter = 0
             while (isActive) {
-                if (videoPlayer.mediaItemCount > 0 && videoPlayer.playbackState == Player.STATE_READY) {
+                if (videoPlayer.playbackState == Player.STATE_READY) {
                     val vPos = videoPlayer.currentPosition
                     _currentPositionMs.value = vPos
                     updateSubtitles(vPos)
@@ -529,10 +487,6 @@ class VotPlayerManager(
                             onPositionSaved?.invoke(info.id, vPos, videoPlayer.duration)
                         }
                     }
-                } else if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {
-                    val aPos = voiceoverPlayer.currentPosition
-                    _currentPositionMs.value = aPos
-                    updateSubtitles(aPos)
                 }
                 delay(250L)
             }

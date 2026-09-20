@@ -50,6 +50,7 @@ class VotWebBridge(
             .ytp-next-button,
             .ytp-prev-button,
             .player-controls-bottom,
+            .player-control-background,
             .player-controls-middle,
             ytm-custom-control,
             .ytp-gradient-bottom,
@@ -60,15 +61,15 @@ class VotWebBridge(
             .player-control-overlay-unmute-button,
             button.unmute-button,
             .ytp-unmute-inner,
-            .ytp-unmute-box {
+            .ytp-unmute-box,
+            .player-control-overlay-unmute,
+            [aria-label*="unmute" i],
+            [aria-label*="Unmute" i],
+            .ytp-button[aria-label*="unmute" i] {
                 display: none !important;
-            }
-            video {
-                display: block !important;
-                opacity: 1 !important;
-                visibility: visible !important;
-                width: 100% !important;
-                height: 100% !important;
+                pointer-events: none !important;
+                opacity: 0 !important;
+                visibility: hidden !important;
             }
             body, html {
                 background: #000 !important;
@@ -84,22 +85,12 @@ class VotWebBridge(
                 window.__vot_seeking_until = 0;
 
                 function applyTargetVolume(video) {
+                    if (!video) return;
                     const vol = (window.__vot_original_volume !== undefined) ? window.__vot_original_volume : 0.0;
                     const shouldMute = (vol <= 0.01);
-                    if (video) {
-                        video.muted = shouldMute;
+                    if (video.muted !== shouldMute || Math.abs(video.volume - vol) > 0.02) {
                         video.volume = vol;
-                    }
-                    const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                    if (player) {
-                        try {
-                            if (shouldMute) {
-                                if (typeof player.mute === 'function') player.mute();
-                            } else {
-                                if (typeof player.unMute === 'function') player.unMute();
-                                if (typeof player.setVolume === 'function') player.setVolume(Math.round(vol * 100));
-                            }
-                        } catch(e) {}
+                        video.muted = shouldMute;
                     }
                 }
 
@@ -131,10 +122,7 @@ class VotWebBridge(
                 // Intercept volumechange: Prevents YouTube's tap-to-unmute from unmuting or resetting volume!
                 document.addEventListener('volumechange', function(e) {
                     if (e.target && (e.target.tagName === 'VIDEO' || e.target.nodeName === 'VIDEO')) {
-                        // Only enforce mute if target volume is muted (0.0)
-                        if (window.__vot_original_volume !== undefined && window.__vot_original_volume <= 0.01) {
-                            applyTargetVolume(e.target);
-                        }
+                        applyTargetVolume(e.target);
                     }
                 }, true);
 
@@ -200,12 +188,15 @@ class VotWebBridge(
                         e.stopPropagation();
                     }
 
-                    // Only re-apply target volume on user clicks if currently configured as muted
+                    // Re-apply target volume on user clicks to negate YouTube's tap-to-unmute
                     const v = document.querySelector('video');
-                    if (v && (window.__vot_original_volume === undefined || window.__vot_original_volume <= 0.01)) {
+                    if (v) {
                         applyTargetVolume(v);
-                        setTimeout(function() { applyTargetVolume(v); }, 50);
-                        setTimeout(function() { applyTargetVolume(v); }, 200);
+                        setTimeout(function() { applyTargetVolume(v); }, 20);
+                        setTimeout(function() { applyTargetVolume(v); }, 60);
+                        setTimeout(function() { applyTargetVolume(v); }, 150);
+                        setTimeout(function() { applyTargetVolume(v); }, 300);
+                        setTimeout(function() { applyTargetVolume(v); }, 600);
                     }
 
                     const fsBtn = target ? target.closest('.fullscreen-icon, button.ytp-fullscreen-button, button[aria-label*="Full screen"], button[aria-label*="Fullscreen"]') : null;
@@ -231,7 +222,9 @@ class VotWebBridge(
                 window.setOriginalVolume = function(vol) {
                     window.__vot_original_volume = Math.max(0, Math.min(1, vol));
                     const video = document.querySelector('video');
-                    applyTargetVolume(video);
+                    if (video) {
+                        applyTargetVolume(video);
+                    }
                 };
             })();
         """.trimIndent()

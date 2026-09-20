@@ -84,8 +84,8 @@ fun YouTubeWebScreen(
 
     val bridge = remember {
         VotWebBridge(
-            onPlay = { playerManager.play() },
-            onPause = { playerManager.pause() },
+            onPlay = { playerManager.syncWebPlay() },
+            onPause = { playerManager.syncWebPause() },
             onSeek = { posMs -> playerManager.syncWebSeek(posMs) },
             onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
             onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
@@ -100,8 +100,8 @@ fun YouTubeWebScreen(
         )
     }
 
-    val controller = remember(videoUrl) {
-        object : VotPlayerManager.WebVideoController {
+    DisposableEffect(webViewRef) {
+        val controller = object : VotPlayerManager.WebVideoController {
             override fun play() {
                 webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && v.paused) v.play();", null)
             }
@@ -119,9 +119,6 @@ fun YouTubeWebScreen(
                 webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.playbackRate = $speed;", null)
             }
         }
-    }
-
-    DisposableEffect(videoUrl) {
         playerManager.webVideoController = controller
         onDispose {
             if (playerManager.webVideoController === controller) {
@@ -132,7 +129,6 @@ fun YouTubeWebScreen(
                 loadUrl("about:blank")
                 onPause()
             }
-            webViewRef = null
         }
     }
 
@@ -254,9 +250,6 @@ fun YouTubeWebScreen(
                         loadUrl(videoUrl)
                         webViewRef = this
                     }
-                },
-                update = { view ->
-                    view.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($originalVolume);", null)
                 },
                 modifier = Modifier.fillMaxSize()
             )
