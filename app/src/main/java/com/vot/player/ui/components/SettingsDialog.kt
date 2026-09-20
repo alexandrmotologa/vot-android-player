@@ -6,11 +6,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,23 +82,55 @@ fun SettingsDialog(
 
                 // Default Player Mode
                 Text(text = "Default Watching Mode", color = TextSecondary, fontSize = 13.sp)
+
+                var currentMode by remember(preferredPlayerMode) { mutableStateOf(preferredPlayerMode) }
+
                 FlowRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     PlayerMode.values().forEach { mode ->
+                        val isSelected = currentMode == mode
                         FilterChip(
-                            selected = preferredPlayerMode == mode,
-                            onClick = { onPlayerModeChange(mode) },
-                            label = { Text(if (mode == PlayerMode.ASK_EVERY_TIME) "Ask" else mode.displayName.take(12)) },
+                            selected = isSelected,
+                            onClick = {
+                                currentMode = mode
+                                onPlayerModeChange(mode)
+                            },
+                            label = {
+                                Text(
+                                    when (mode) {
+                                        PlayerMode.ASK_EVERY_TIME -> "Ask Every Time"
+                                        PlayerMode.NATIVE_PLAYER -> "Native Player"
+                                        PlayerMode.YOUTUBE_WEB -> "YouTube Web"
+                                    }
+                                )
+                            },
+                            leadingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null,
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = AccentRed,
-                                selectedLabelColor = Color.White
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White
                             )
                         )
                     }
                 }
+
+                Text(
+                    text = currentMode.description,
+                    color = Color(0xFFAAAAAA),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
                 HorizontalDivider(color = Color(0x22FFFFFF))

@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
 
     private var currentTranslatedAudioUrl by mutableStateOf<String?>(null)
     private var currentPlayingMode by mutableStateOf(PlayerMode.NATIVE_PLAYER)
+    private var preferredPlayerMode by mutableStateOf(PlayerMode.ASK_EVERY_TIME)
     private var pendingOpenUrl by mutableStateOf<String?>(null)
     private var showModeDialog by mutableStateOf(false)
     private var showSettingsFromHome by mutableStateOf(false)
@@ -110,6 +111,7 @@ class MainActivity : ComponentActivity() {
         isSponsorBlockEnabled = prefs.isSponsorBlockEnabled
         selectedVoiceGender = VoiceGender.values().firstOrNull { it.code == prefs.preferredVoiceGender } ?: VoiceGender.AUTO
         selectedVoiceActor = VoiceActor.values().firstOrNull { it.voiceId == prefs.preferredVoiceActor } ?: VoiceActor.AUTO
+        preferredPlayerMode = prefs.preferredPlayerMode
 
         playerManager = VotPlayerManager(
             context = this,
@@ -227,8 +229,9 @@ class MainActivity : ComponentActivity() {
                                     prefs.isSponsorBlockEnabled = enabled
                                     playerManager.setSponsorBlockEnabled(enabled)
                                 },
-                                preferredPlayerMode = prefs.preferredPlayerMode,
+                                preferredPlayerMode = preferredPlayerMode,
                                 onPlayerModeChange = { mode ->
+                                    preferredPlayerMode = mode
                                     prefs.preferredPlayerMode = mode
                                 },
                                 onEnterPiP = { enterPictureInPicture() },
@@ -310,6 +313,7 @@ class MainActivity : ComponentActivity() {
                         PlayerModeDialog(
                             onSelectMode = { mode, rememberChoice ->
                                 if (rememberChoice) {
+                                    preferredPlayerMode = mode
                                     prefs.preferredPlayerMode = mode
                                 }
                                 val url = pendingOpenUrl!!
@@ -360,8 +364,11 @@ class MainActivity : ComponentActivity() {
                             },
                             isAudioOnly = playerManager.isAudioOnly.value,
                             onToggleAudioOnly = { playerManager.toggleAudioOnly() },
-                            preferredPlayerMode = prefs.preferredPlayerMode,
-                            onPlayerModeChange = { mode -> prefs.preferredPlayerMode = mode },
+                            preferredPlayerMode = preferredPlayerMode,
+                            onPlayerModeChange = { mode ->
+                                preferredPlayerMode = mode
+                                prefs.preferredPlayerMode = mode
+                            },
                             isLiveVoiceAvailable = isLiveVoiceAvailable,
                             hasSubtitles = hasSubtitles,
                             isCustomVoiceSupported = isCustomVoiceSupported,
@@ -429,7 +436,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onUrlTriggered(url: String, requestedStartPositionMs: Long = 0L) {
-        val mode = prefs.preferredPlayerMode
+        val mode = preferredPlayerMode
         if (mode == PlayerMode.ASK_EVERY_TIME) {
             pendingOpenUrl = url
             showModeDialog = true

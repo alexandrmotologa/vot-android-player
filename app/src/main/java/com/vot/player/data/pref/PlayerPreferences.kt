@@ -39,7 +39,7 @@ class PlayerPreferences(context: Context) {
             }
         }
         set(value) {
-            prefs.edit().putString(KEY_PLAYER_MODE, value.name).apply()
+            prefs.edit().putString(KEY_PLAYER_MODE, value.name).commit()
         }
 
     var isSponsorBlockEnabled: Boolean
