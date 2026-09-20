@@ -101,14 +101,17 @@ fun YouTubeWebScreen(
     DisposableEffect(webViewRef) {
         val controller = object : VotPlayerManager.WebVideoController {
             override fun play() {
-                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && v.paused) v.play();", null)
+                val js = "(function(){ try { if (window.__vot_play) { window.__vot_play(); return; } const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); if (p && typeof p.playVideo === 'function') p.playVideo(); const v = document.querySelector('video'); if (v && v.paused) v.play(); } catch(e){} })();"
+                webViewRef?.evaluateJavascript(js, null)
             }
             override fun pause() {
-                webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && !v.paused) v.pause();", null)
+                val js = "(function(){ try { if (window.__vot_pause) { window.__vot_pause(); return; } const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); if (p && typeof p.pauseVideo === 'function') p.pauseVideo(); const v = document.querySelector('video'); if (v && !v.paused) v.pause(); } catch(e){} })();"
+                webViewRef?.evaluateJavascript(js, null)
             }
             override fun seekTo(positionMs: Long) {
                 val sec = positionMs / 1000.0
-                webViewRef?.evaluateJavascript("if (window.__vot_seekTo) { window.__vot_seekTo($sec); } else { const v = document.querySelector('video'); if (v) v.currentTime = $sec; }", null)
+                val js = "(function(){ try { if (window.__vot_seekTo) { window.__vot_seekTo($sec); return; } const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); if (p && typeof p.seekTo === 'function') p.seekTo($sec, true); const v = document.querySelector('video'); if (v) v.currentTime = $sec; } catch(e){} })();"
+                webViewRef?.evaluateJavascript(js, null)
             }
             override fun setVolume(volume: Float) {
                 webViewRef?.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($volume);", null)

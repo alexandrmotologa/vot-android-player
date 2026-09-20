@@ -105,18 +105,48 @@ class VotWebBridge(
                 // Dedicated seek handler that interacts with YouTube's player API and HTML5 video
                 window.__vot_seekTo = function(sec) {
                     window.__vot_seeking_until = Date.now() + 1000; // block timeupdate for 1000ms during seek buffer
-                    const video = document.querySelector('video');
-                    if (video) {
-                        try {
-                            video.currentTime = sec;
-                        } catch(e) {}
-                    }
-                    const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                    if (player && typeof player.seekTo === 'function') {
-                        try {
+                    try {
+                        const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (player && typeof player.seekTo === 'function') {
                             player.seekTo(sec, true);
-                        } catch(e) {}
-                    }
+                        }
+                    } catch(e) {}
+                    try {
+                        const video = document.querySelector('video');
+                        if (video) {
+                            video.currentTime = sec;
+                        }
+                    } catch(e) {}
+                };
+
+                window.__vot_play = function() {
+                    try {
+                        const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (player && typeof player.playVideo === 'function') {
+                            player.playVideo();
+                        }
+                    } catch(e) {}
+                    try {
+                        const video = document.querySelector('video');
+                        if (video && video.paused) {
+                            video.play();
+                        }
+                    } catch(e) {}
+                };
+
+                window.__vot_pause = function() {
+                    try {
+                        const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (player && typeof player.pauseVideo === 'function') {
+                            player.pauseVideo();
+                        }
+                    } catch(e) {}
+                    try {
+                        const video = document.querySelector('video');
+                        if (video && !video.paused) {
+                            video.pause();
+                        }
+                    } catch(e) {}
                 };
 
                 // Intercept volumechange: Prevents YouTube's tap-to-unmute from unmuting or resetting volume!

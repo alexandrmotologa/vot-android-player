@@ -308,13 +308,17 @@ class VotPlayerManager(
         if (wasPlaying) play()
     }
 
+    fun stopVideo() {
+        videoPlayer.stop()
+        videoPlayer.clearMediaItems()
+    }
+
     fun play() {
         _isPlaying.value = true
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.play()
-        } else {
-            webVideoController?.play()
         }
+        webVideoController?.play()
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.playWhenReady = true
             voiceoverPlayer.play()
@@ -325,9 +329,8 @@ class VotPlayerManager(
         _isPlaying.value = false
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.pause()
-        } else {
-            webVideoController?.pause()
         }
+        webVideoController?.pause()
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.pause()
         }
@@ -345,9 +348,8 @@ class VotPlayerManager(
         val target = positionMs.coerceIn(0L, maxDuration)
         if (videoPlayer.mediaItemCount > 0) {
             videoPlayer.seekTo(target)
-        } else {
-            webVideoController?.seekTo(target)
         }
+        webVideoController?.seekTo(target)
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.seekTo(target)
         }
@@ -356,7 +358,9 @@ class VotPlayerManager(
     }
 
     fun seekRelative(deltaMs: Long) {
-        val currentPos = if (videoPlayer.mediaItemCount > 0) {
+        val currentPos = if (webVideoController != null) {
+            _currentPositionMs.value
+        } else if (videoPlayer.mediaItemCount > 0 && videoPlayer.currentPosition > 0L) {
             videoPlayer.currentPosition
         } else {
             _currentPositionMs.value

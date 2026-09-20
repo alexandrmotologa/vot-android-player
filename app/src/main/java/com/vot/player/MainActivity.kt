@@ -441,6 +441,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openYouTubeWebView(rawUrl: String) {
+        playerManager.stopVideo()
         val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl) ?: ""
         val webUrl = if (videoId.isNotEmpty()) {
             "https://m.youtube.com/watch?v=$videoId"
@@ -560,6 +561,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val streamResult = streamExtractor.extract(rawUrl)
             if (streamResult.isFailure) {
+                playerManager.stopVideo()
                 if (videoId != null) {
                     val webUrl = "https://m.youtube.com/watch?v=$videoId"
                     val fallbackInfo = UniversalVideoInfo(
