@@ -24,6 +24,7 @@ import com.vot.player.data.pref.PlayerPreferences
 import com.vot.player.data.sponsorblock.SponsorBlockClient
 import com.vot.player.data.update.AppUpdateInfo
 import com.vot.player.data.update.UpdateChecker
+import com.vot.player.data.update.UpdateDownloadState
 import com.vot.player.data.vot.VotApiClient
 import com.vot.player.data.youtube.YouTubeStreamExtractor
 import com.vot.player.export.ExportState
@@ -35,6 +36,7 @@ import com.vot.player.ui.YouTubeWebScreen
 import com.vot.player.ui.components.ExportProgressDialog
 import com.vot.player.ui.components.PlayerModeDialog
 import com.vot.player.ui.components.SettingsDialog
+import com.vot.player.ui.components.UpdateDownloadDialog
 import com.vot.player.ui.theme.DarkBackground
 import com.vot.player.ui.theme.VotPlayerTheme
 import kotlinx.coroutines.launch
@@ -128,6 +130,8 @@ class MainActivity : ComponentActivity() {
             VotPlayerTheme {
                 val exportState by exportManager.exportState.collectAsState()
                 var showExportDialog by remember { mutableStateOf(false) }
+                var showUpdateDialog by remember { mutableStateOf(false) }
+                var updateDownloadState by remember { mutableStateOf<UpdateDownloadState>(UpdateDownloadState.Idle) }
 
                 LaunchedEffect(exportState) {
                     if (exportState !is ExportState.Idle) {
@@ -272,7 +276,15 @@ class MainActivity : ComponentActivity() {
                                 dismissedClipboardUrl = detectedClipboardUrl
                                 detectedClipboardUrl = null
                             },
-                            onDownloadUpdate = { updateChecker.downloadUpdate(this@MainActivity, it) },
+                            onDownloadUpdate = { updateInfo ->
+                                showUpdateDialog = true
+                                updateDownloadState = UpdateDownloadState.Idle
+                                lifecycleScope.launch {
+                                    updateChecker.downloadApk(this@MainActivity, updateInfo) { state ->
+                                        updateDownloadState = state
+                                    }
+                                }
+                            },
                             onOpenSettings = { showSettingsFromHome = true },
                             onPlayUrl = { url, startPos ->
                                 detectedClipboardUrl = null
@@ -366,6 +378,20 @@ class MainActivity : ComponentActivity() {
                                 if (exportState is ExportState.Success || exportState is ExportState.Error) {
                                     exportManager.reset()
                                 }
+                            }
+                        )
+                    }
+
+                    // In-App Update Dialog
+                    if (showUpdateDialog && appUpdateInfo != null) {
+                        UpdateDownloadDialog(
+                            updateInfo = appUpdateInfo!!,
+                            downloadState = updateDownloadState,
+                            onInstall = { apkFile -> updateChecker.installApk(this@MainActivity, apkFile) },
+                            onOpenBrowser = { updateChecker.openReleaseInBrowser(this@MainActivity, appUpdateInfo!!) },
+                            onDismiss = {
+                                showUpdateDialog = false
+                                updateDownloadState = UpdateDownloadState.Idle
                             }
                         )
                     }
