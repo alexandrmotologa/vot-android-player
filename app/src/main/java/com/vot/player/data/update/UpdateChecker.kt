@@ -147,7 +147,12 @@ class UpdateChecker(
                             lastReportTime = now
                             val progress = if (totalBytes > 0) ((bytesCopied * 100) / totalBytes).toInt().coerceIn(0, 99) else 50
                             val downloadedMb = bytesCopied / (1024f * 1024f)
-                            onProgress(UpdateDownloadState.Downloading(progress, downloadedMb, totalMb))
+                            withContext(Dispatchers.Main) {
+                                onProgress(UpdateDownloadState.Downloading(progress, downloadedMb, totalMb))
+                            }
+                        }
+                        if (totalBytes > 0 && bytesCopied >= totalBytes) {
+                            break
                         }
                         bytes = input.read(buffer)
                     }
@@ -156,12 +161,15 @@ class UpdateChecker(
             }
 
             val finalMb = apkFile.length() / (1024f * 1024f)
-            onProgress(UpdateDownloadState.ReadyToInstall(apkFile))
             withContext(Dispatchers.Main) {
+                onProgress(UpdateDownloadState.Downloading(100, finalMb, finalMb))
+                onProgress(UpdateDownloadState.ReadyToInstall(apkFile))
                 installApk(context, apkFile)
             }
         } catch (e: Exception) {
-            onProgress(UpdateDownloadState.Error(e.localizedMessage ?: "Download failed"))
+            withContext(Dispatchers.Main) {
+                onProgress(UpdateDownloadState.Error(e.localizedMessage ?: "Download failed"))
+            }
         }
     }
 
@@ -191,6 +199,10 @@ class UpdateChecker(
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val resInfoList = context.packageManager.queryIntentActivities(installIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            for (resolveInfo in resInfoList) {
+                context.grantUriPermission(resolveInfo.activityInfo.packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(installIntent)
         } catch (e: Exception) {

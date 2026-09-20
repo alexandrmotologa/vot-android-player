@@ -1,5 +1,6 @@
 package com.vot.player.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -109,6 +110,19 @@ fun PlayerScreen(
     // Request focus for D-Pad / TV key handling
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
+    }
+    // System Back Gesture handling
+    BackHandler {
+        if (showSettingsDialog) {
+            showSettingsDialog = false
+        } else if (isLandscape) {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            onNavigateBack()
+        }
     }
 
     Box(
@@ -550,7 +564,7 @@ fun PlayerScreen(
                             modifier = Modifier.width(46.dp)
                         )
                         Slider(
-                            value = if (isDraggingSlider) dragPositionMs else currentPositionMs.toFloat(),
+                            value = (if (isDraggingSlider) dragPositionMs else currentPositionMs.toFloat()).coerceIn(0f, durationMs.toFloat().coerceAtLeast(1f)),
                             onValueChange = { newValue ->
                                 isDraggingSlider = true
                                 dragPositionMs = newValue

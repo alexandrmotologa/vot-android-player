@@ -177,6 +177,9 @@ class VotPlayerManager(
         currentVoiceoverAudioUrl = voiceoverAudioUrl
         subtitleCues = subtitles
         _availableQualities.value = videoInfo.availableQualities
+        if (videoInfo.durationSeconds > 0L) {
+            _durationMs.value = videoInfo.durationSeconds * 1000L
+        }
 
         val defaultQuality = videoInfo.availableQualities.firstOrNull()
         _selectedQuality.value = defaultQuality
@@ -195,12 +198,15 @@ class VotPlayerManager(
                 .build()
         )
 
+        videoPlayer.volume = _originalVolume.value
+
         if (!voiceoverAudioUrl.isNullOrEmpty()) {
             val audioItem = MediaItem.fromUri(voiceoverAudioUrl)
             val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(audioItem)
             voiceoverPlayer.setMediaSource(audioSource)
             voiceoverPlayer.prepare()
         }
+        voiceoverPlayer.volume = _voiceoverVolume.value
 
         if (startPositionMs > 0L) {
             seekTo(startPositionMs)
@@ -332,9 +338,9 @@ class VotPlayerManager(
     }
 
     fun seekTo(positionMs: Long) {
-        val maxDuration = videoPlayer.duration.takeIf { it > 0L }
+        val maxDuration = _durationMs.value.takeIf { it > 0L }
+            ?: videoPlayer.duration.takeIf { it > 0L }
             ?: voiceoverPlayer.duration.takeIf { it > 0L }
-            ?: _durationMs.value.takeIf { it > 0L }
             ?: Long.MAX_VALUE
         val target = positionMs.coerceIn(0L, maxDuration)
         if (videoPlayer.mediaItemCount > 0) {
@@ -355,7 +361,12 @@ class VotPlayerManager(
         } else {
             _currentPositionMs.value
         }
-        seekTo(currentPos + deltaMs)
+        val maxDuration = _durationMs.value.takeIf { it > 0L }
+            ?: videoPlayer.duration.takeIf { it > 0L }
+            ?: voiceoverPlayer.duration.takeIf { it > 0L }
+            ?: Long.MAX_VALUE
+        val target = (currentPos + deltaMs).coerceIn(0L, maxDuration)
+        seekTo(target)
     }
 
     fun setOriginalVolume(volume: Float) {
