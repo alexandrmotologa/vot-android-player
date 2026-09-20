@@ -151,7 +151,7 @@ class YouTubeStreamExtractor(
                     }
                 }
 
-                // Add adaptive video streams (prefer avc1 / H.264 mp4 for universal hardware decoding)
+                // Add adaptive video streams (strictly prefer avc1 / H.264 mp4 for universal hardware decoding)
                 for (i in 0 until adaptiveFormats.length()) {
                     val fmt = adaptiveFormats.getJSONObject(i)
                     val mimeType = fmt.optString("mimeType")
@@ -159,9 +159,11 @@ class YouTubeStreamExtractor(
                     val height = fmt.optInt("height", 0)
                     val qualityLabel = fmt.optString("qualityLabel", "${height}p")
 
-                    if (url.isNotEmpty() && mimeType.startsWith("video/") && height > 0) {
+                    val isAvc = mimeType.contains("avc1")
+                    val isMp4 = mimeType.startsWith("video/mp4") && !mimeType.contains("av01")
+
+                    if (url.isNotEmpty() && (isAvc || isMp4) && height > 0) {
                         val existingIndex = qualityList.indexOfFirst { it.height == height }
-                        val isAvc = mimeType.contains("avc1")
                         if (existingIndex == -1) {
                             qualityList.add(VideoQuality(qualityLabel, height, url, bestAudioUrl))
                         } else if (isAvc) {
@@ -174,13 +176,13 @@ class YouTubeStreamExtractor(
             // Sort standard qualities descending (1080p, 720p, 480p, 360p...)
             qualityList.sortByDescending { it.height }
 
-            // Offer Auto (HLS) if master variant manifest is available
-            if (!hlsManifestUrl.isNullOrEmpty()) {
-                qualityList.add(0, VideoQuality("Auto (HLS)", 9999, hlsManifestUrl, null))
-            }
+            // Prioritize 720p or 1080p for seamless startup buffering
+            val preferredDefault = qualityList.find { it.height == 720 }
+                ?: qualityList.find { it.height == 1080 }
+                ?: qualityList.firstOrNull()
 
-            val primaryStreamUrl = qualityList.firstOrNull()?.videoUrl
-                ?: hlsManifestUrl
+            val primaryStreamUrl = preferredDefault?.videoUrl
+                ?: qualityList.firstOrNull()?.videoUrl
                 ?: bestProgressiveUrl
 
             if (primaryStreamUrl.isNullOrEmpty()) {

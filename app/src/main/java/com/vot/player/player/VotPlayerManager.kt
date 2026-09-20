@@ -144,8 +144,19 @@ class VotPlayerManager(
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 android.util.Log.e("VotPlayerManager", "Video player error: ${error.errorCodeName} (${error.errorCode})", error)
-                _hasVideoError.value = true
-                _hasVideoMedia.value = false
+                val currentQ = _selectedQuality.value
+                val fallbackQ = _availableQualities.value
+                    .filter { it != currentQ && it.height < (currentQ?.height ?: 1080) }
+                    .maxByOrNull { it.height }
+                    ?: _availableQualities.value.firstOrNull { it != currentQ }
+
+                if (fallbackQ != null) {
+                    android.util.Log.i("VotPlayerManager", "Falling back from ${currentQ?.label} to ${fallbackQ.label}")
+                    changeQuality(fallbackQ)
+                } else {
+                    _hasVideoError.value = true
+                    _hasVideoMedia.value = false
+                }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -208,7 +219,9 @@ class VotPlayerManager(
             _durationMs.value = videoInfo.durationSeconds * 1000L
         }
 
-        val defaultQuality = videoInfo.availableQualities.firstOrNull()
+        val defaultQuality = videoInfo.availableQualities.find { it.height == 720 }
+            ?: videoInfo.availableQualities.find { it.height == 1080 }
+            ?: videoInfo.availableQualities.firstOrNull()
         _selectedQuality.value = defaultQuality
 
         setupVideoSource(
@@ -301,7 +314,7 @@ class VotPlayerManager(
             .setMediaMetadata(metadata)
             .build()
 
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(upstreamDataSourceFactory)
 
         if (!isHls && !audioUrl.isNullOrEmpty()) {
             val videoItem = MediaItem.Builder()
@@ -315,7 +328,7 @@ class VotPlayerManager(
                 .build()
             val audioSource = mediaSourceFactory.createMediaSource(audioItem)
 
-            val mergedSource = MergingMediaSource(videoSource, audioSource)
+            val mergedSource = MergingMediaSource(true, true, videoSource, audioSource)
             videoPlayer.setMediaSource(mergedSource)
         } else {
             val videoSource = mediaSourceFactory.createMediaSource(mediaItem)

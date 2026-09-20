@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -255,7 +256,8 @@ fun PlayerScreen(
                         )
                     }
                 }
-            } else if (hasVideoMedia && !hasVideoError) {
+            } else {
+                // Mode 1: Pure Native Video Playback with ExoPlayer
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -274,121 +276,52 @@ fun PlayerScreen(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-            } else if (!embeddedUrl.isNullOrEmpty()) {
-                // Minimalist Ad-Free Player (Zero comments, Zero recommendations, Zero headers)
-                var webViewRef by remember { mutableStateOf<WebView?>(null) }
-                val bridge = remember {
-                    VotWebBridge(
-                        onPlay = { playerManager.play() },
-                        onPause = { playerManager.pause() },
-                        onSeek = { posMs -> playerManager.syncWebSeek(posMs) },
-                        onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
-                        onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
-                        onScreenTap = { showControls = !showControls },
-                        onFullscreenToggle = { isFs ->
-                            val act = context as? android.app.Activity
-                            act?.requestedOrientation = if (isFs) {
-                                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            } else {
-                                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                            }
-                        }
-                    )
-                }
 
-                val controller = remember(embeddedUrl) {
-                    object : VotPlayerManager.WebVideoController {
-                        override fun play() {
-                            webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && v.paused) v.play();", null)
-                        }
-                        override fun pause() {
-                            webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v && !v.paused) v.pause();", null)
-                        }
-                        override fun seekTo(positionMs: Long) {
-                            val sec = positionMs / 1000.0
-                            webViewRef?.evaluateJavascript("if (window.__vot_seekTo) { window.__vot_seekTo($sec); } else { const v = document.querySelector('video'); if (v) v.currentTime = $sec; }", null)
-                        }
-                        override fun setVolume(volume: Float) {
-                            webViewRef?.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($volume);", null)
-                        }
-                        override fun setPlaybackSpeed(speed: Float) {
-                            webViewRef?.evaluateJavascript("const v = document.querySelector('video'); if (v) v.playbackRate = $speed;", null)
-                        }
-                    }
-                }
-
-                DisposableEffect(embeddedUrl) {
-                    playerManager.webVideoController = controller
-                    onDispose {
-                        if (playerManager.webVideoController === controller) {
-                            playerManager.webVideoController = null
-                        }
-                        webViewRef?.apply {
-                            stopLoading()
-                            loadUrl("about:blank")
-                            onPause()
-                        }
-                        webViewRef = null
-                    }
-                }
-
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
+                // Error Overlay if all stream formats fail
+                if (hasVideoError && !hasVideoMedia) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.85f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = AccentRed,
+                                modifier = Modifier.size(44.dp)
                             )
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                mediaPlaybackRequiresUserGesture = false
-                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Playback issue with current quality",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Tap below to retry with standard resolution.",
+                                color = TextSecondary,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    val q = availableQualities.find { it.height <= 480 }
+                                        ?: availableQualities.firstOrNull()
+                                    if (q != null) playerManager.changeQuality(q)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                            ) {
+                                Text("Retry (360p / 480p)")
                             }
-                            CookieManager.getInstance().setAcceptCookie(true)
-                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                            addJavascriptInterface(bridge, VotWebBridge.INTERFACE_NAME)
-
-                            webViewClient = object : WebViewClient() {
-                                override fun onPageFinished(view: WebView?, url: String?) {
-                                    super.onPageFinished(view, url)
-                                    val cssInjection = """
-                                        const style = document.createElement('style');
-                                        style.textContent = `${VotWebBridge.MINIMALIST_CSS}`;
-                                        document.head.appendChild(style);
-                                    """.trimIndent()
-                                    view?.evaluateJavascript(cssInjection, null)
-                                    view?.evaluateJavascript(VotWebBridge.INJECTION_SCRIPT, null)
-                                    view?.evaluateJavascript("window.setOriginalVolume($originalVolume);", null)
-                                }
-                            }
-
-                            webChromeClient = object : android.webkit.WebChromeClient() {
-                                override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
-                                    val act = context as? android.app.Activity
-                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                }
-                                override fun onHideCustomView() {
-                                    val act = context as? android.app.Activity
-                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                }
-                            }
-                            loadUrl(embeddedUrl)
-                            webViewRef = this
                         }
-                    },
-                    update = { view ->
-                        view.evaluateJavascript("if (window.setOriginalVolume) window.setOriginalVolume($originalVolume);", null)
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color.Black),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = AccentRed)
+                    }
                 }
             }
         }
