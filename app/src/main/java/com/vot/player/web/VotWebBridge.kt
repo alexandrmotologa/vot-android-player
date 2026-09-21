@@ -13,6 +13,7 @@ class VotWebBridge(
     private val onScreenTap: () -> Unit = {},
     private val onFullscreenToggle: (Boolean) -> Unit = {},
     private val onCaptionsReceived: ((String) -> Unit)? = null,
+    private val onDualCaptionsReceived: ((ruJson: String, enJson: String) -> Unit)? = null,
     private val onUrlChanged: ((String) -> Unit)? = null
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -322,32 +323,43 @@ class VotWebBridge(
                     if (captionsFetched) return;
                     try {
                         const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                        if (p && typeof p.getOption === 'function') {
-                            const tracklist = p.getOption('captions', 'tracklist') || [];
-                            if (tracklist.length > 0) {
-                                let track = tracklist.find(t => t.languageCode === 'ru' || (t.vssId && t.vssId.includes('.ru')))
-                                    || tracklist.find(t => t.languageCode === 'en')
-                                    || tracklist[0];
-                                if (track && track.baseUrl) {
-                                    captionsFetched = true;
-                                    let cUrl = track.baseUrl;
-                                    const isRu = (track.languageCode === 'ru') || (track.vssId && track.vssId.includes('.ru'));
-                                    if (!isRu && !cUrl.includes('tlang=')) {
-                                        cUrl += '&tlang=ru';
-                                    }
-                                    if (!cUrl.includes('fmt=')) {
-                                        cUrl += '&fmt=json3';
-                                    }
-                                    fetch(cUrl)
-                                        .then(r => r.text())
-                                        .then(txt => {
-                                            if (txt && txt.length > 20 && window.VotAndroidBridge && window.VotAndroidBridge.onCaptionsLoaded) {
-                                                window.VotAndroidBridge.onCaptionsLoaded(txt);
-                                            }
-                                        })
-                                        .catch(() => {});
-                                }
+                        const resp = (p && typeof p.getPlayerResponse === 'function') ? p.getPlayerResponse() : window.ytInitialPlayerResponse;
+                        const tracklist = (p && typeof p.getOption === 'function' ? p.getOption('captions', 'tracklist') : null)
+                            || (resp && resp.captions && resp.captions.playerCaptionsTracklistRenderer ? resp.captions.playerCaptionsTracklistRenderer.captionTracks : null)
+                            || [];
+                        if (tracklist.length > 0) {
+                            captionsFetched = true;
+                            const ruTrack = tracklist.find(function(t) { return t.languageCode === 'ru' || (t.vssId && t.vssId.indexOf('.ru') !== -1); });
+                            const enTrack = tracklist.find(function(t) { return t.languageCode === 'en' || (t.vssId && t.vssId.indexOf('.en') !== -1); }) || tracklist[0];
+
+                            let ruUrl = '';
+                            if (ruTrack && ruTrack.baseUrl) {
+                                ruUrl = ruTrack.baseUrl;
+                            } else if (enTrack && enTrack.baseUrl) {
+                                ruUrl = enTrack.baseUrl + '&tlang=ru';
                             }
+                            if (ruUrl && ruUrl.indexOf('fmt=') === -1) ruUrl += '&fmt=json3';
+
+                            let enUrl = '';
+                            if (enTrack && enTrack.baseUrl) {
+                                enUrl = enTrack.baseUrl;
+                                if (enUrl.indexOf('fmt=') === -1) enUrl += '&fmt=json3';
+                            }
+
+                            const pRu = ruUrl ? fetch(ruUrl).then(function(r) { return r.text(); }).catch(function() { return ''; }) : Promise.resolve('');
+                            const pEn = enUrl ? fetch(enUrl).then(function(r) { return r.text(); }).catch(function() { return ''; }) : Promise.resolve('');
+
+                            Promise.all([pRu, pEn]).then(function(results) {
+                                const ruTxt = results[0] || '';
+                                const enTxt = results[1] || '';
+                                if (window.VotAndroidBridge) {
+                                    if (typeof window.VotAndroidBridge.onDualCaptionsLoaded === 'function') {
+                                        window.VotAndroidBridge.onDualCaptionsLoaded(ruTxt, enTxt);
+                                    } else if (window.VotAndroidBridge.onCaptionsLoaded) {
+                                        window.VotAndroidBridge.onCaptionsLoaded(ruTxt || enTxt);
+                                    }
+                                }
+                            }).catch(function() {});
                         }
                     } catch(e) {}
                 }
@@ -570,6 +582,18 @@ class VotWebBridge(
     @JavascriptInterface
     fun onCaptionsLoaded(rawJson: String) {
         mainHandler.post { onCaptionsReceived?.invoke(rawJson) }
+    }
+
+    @JavascriptInterface
+    fun onDualCaptionsLoaded(ruJson: String, enJson: String) {
+        mainHandler.post {
+            onDualCaptionsReceived?.invoke(ruJson, enJson)
+            if (ruJson.isNotBlank()) {
+                onCaptionsReceived?.invoke(ruJson)
+            } else if (enJson.isNotBlank()) {
+                onCaptionsReceived?.invoke(enJson)
+            }
+        }
     }
 
     @JavascriptInterface

@@ -24,6 +24,11 @@ import java.util.regex.Pattern
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
+data class DualSubtitles(
+    val russianCues: List<SubtitleCue> = emptyList(),
+    val englishCues: List<SubtitleCue> = emptyList()
+)
+
 class VotApiClient(
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -233,10 +238,13 @@ class VotApiClient(
         }
     }
 
-    suspend fun getSubtitles(
-        videoUrl: String,
-        targetLang: TargetLanguage = TargetLanguage.RUSSIAN
-    ): Result<List<SubtitleCue>> = withContext(Dispatchers.IO) {
+    suspend fun getDualSubtitles(
+        videoUrl: String
+    ): Result<DualSubtitles> = withContext(Dispatchers.IO) {
+        var ruCues: List<SubtitleCue> = emptyList()
+        var enCues: List<SubtitleCue> = emptyList()
+
+        // 1. Try Yandex subtitles API
         try {
             val session = getOrCreateSession()
             val path = "/video-subtitles/get-subtitles"
@@ -245,7 +253,7 @@ class VotApiClient(
 
             val requestBytes = VotProtobuf.encodeSubtitlesRequest(
                 url = videoUrl,
-                language = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru"
+                language = "en"
             )
             val bodySign = signHmacSha256(requestBytes)
 
@@ -268,54 +276,79 @@ class VotApiClient(
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
-            println("VOT getSubtitles response code: ${response.code}")
             if (response.isSuccessful) {
                 val responseBytes = response.body?.bytes()
-                println("VOT getSubtitles responseBytes size: ${responseBytes?.size}")
                 if (responseBytes != null) {
                     val subtitleEntries = VotProtobuf.decodeSubtitlesResponse(responseBytes)
-                    println("VOT decoded subtitleEntries: ${subtitleEntries.size} -> $subtitleEntries")
-                    var chosenUrl = ""
+                    val ruEntry = subtitleEntries.firstOrNull { it.translatedLanguage == "ru" && it.translatedUrl.isNotBlank() }
+                        ?: subtitleEntries.firstOrNull { it.language == "ru" && it.url.isNotBlank() }
+                    val enEntry = subtitleEntries.firstOrNull { it.language == "en" && it.url.isNotBlank() }
+                        ?: subtitleEntries.firstOrNull { it.url.isNotBlank() && it != ruEntry }
 
-                    if (targetLang == TargetLanguage.RUSSIAN) {
-                        chosenUrl = subtitleEntries.firstOrNull { it.translatedLanguage == "ru" && it.translatedUrl.isNotBlank() }?.translatedUrl
-                            ?: subtitleEntries.firstOrNull { it.language == "ru" && it.url.isNotBlank() }?.url
-                            ?: subtitleEntries.firstOrNull { it.translatedUrl.isNotBlank() }?.translatedUrl
-                            ?: subtitleEntries.firstOrNull { it.url.isNotBlank() }?.url
-                            ?: ""
-                    } else {
-                        chosenUrl = subtitleEntries.firstOrNull { it.language == targetLang.code && it.url.isNotBlank() }?.url
-                            ?: subtitleEntries.firstOrNull { it.url.isNotBlank() }?.url
-                            ?: ""
+                    if (ruEntry != null) {
+                        val subUrl = ruEntry.translatedUrl.ifBlank { ruEntry.url }
+                        if (subUrl.isNotBlank()) {
+                            val subResp = okHttpClient.newCall(Request.Builder().url(subUrl).get().build()).execute()
+                            if (subResp.isSuccessful) {
+                                ruCues = parseSubtitles(subResp.body?.string().orEmpty())
+                            }
+                        }
                     }
-
-                    if (chosenUrl.isNotBlank()) {
-                        val subRequest = Request.Builder().url(chosenUrl).get().build()
-                        val subResponse = okHttpClient.newCall(subRequest).execute()
-                        if (subResponse.isSuccessful) {
-                            val subText = subResponse.body?.string() ?: ""
-                            val cues = parseSubtitles(subText)
-                            if (cues.isNotEmpty()) {
-                                return@withContext Result.success(cues)
+                    if (enEntry != null) {
+                        val subUrl = enEntry.url.ifBlank { enEntry.translatedUrl }
+                        if (subUrl.isNotBlank()) {
+                            val subResp = okHttpClient.newCall(Request.Builder().url(subUrl).get().build()).execute()
+                            if (subResp.isSuccessful) {
+                                enCues = parseSubtitles(subResp.body?.string().orEmpty())
                             }
                         }
                     }
                 }
             }
+        } catch (_: Exception) {}
 
-            // Fallback: If Yandex subtitles were not available or empty, fetch from YouTube directly!
-            val ytCues = fetchYouTubeCaptionsFallback(videoUrl, targetLang)
-            Result.success(ytCues)
-        } catch (e: Exception) {
-            // Even if Yandex service errored, try YouTube captions fallback
+        // 2. Fallback: YouTube direct captions for missing tracks
+        if (ruCues.isEmpty() || enCues.isEmpty()) {
             try {
-                val ytCues = fetchYouTubeCaptionsFallback(videoUrl, targetLang)
-                if (ytCues.isNotEmpty()) {
-                    return@withContext Result.success(ytCues)
+                if (enCues.isEmpty()) {
+                    val fallbackEn = fetchYouTubeCaptionsFallback(videoUrl, TargetLanguage.ENGLISH)
+                    if (fallbackEn.isNotEmpty()) {
+                        enCues = fallbackEn
+                    }
+                }
+                if (ruCues.isEmpty()) {
+                    val fallbackRu = fetchYouTubeCaptionsFallback(videoUrl, TargetLanguage.RUSSIAN)
+                    if (fallbackRu.isNotEmpty()) {
+                        ruCues = fallbackRu
+                    }
                 }
             } catch (_: Exception) {}
-            Result.failure(e)
         }
+
+        // 3. Guaranteed Russian availability: Translate English cues to Russian via GTX batch translator
+        if (ruCues.isEmpty() && enCues.isNotEmpty()) {
+            try {
+                ruCues = translateCues(enCues, "ru")
+            } catch (_: Exception) {}
+        }
+
+        // 4. If English missing but Russian available, translate Russian cues to English
+        if (enCues.isEmpty() && ruCues.isNotEmpty()) {
+            try {
+                enCues = translateCues(ruCues, "en")
+            } catch (_: Exception) {}
+        }
+
+        Result.success(DualSubtitles(russianCues = ruCues, englishCues = enCues))
+    }
+
+    suspend fun getSubtitles(
+        videoUrl: String,
+        targetLang: TargetLanguage = TargetLanguage.RUSSIAN
+    ): Result<List<SubtitleCue>> = withContext(Dispatchers.IO) {
+        val dual = getDualSubtitles(videoUrl).getOrDefault(DualSubtitles())
+        val cues = if (targetLang == TargetLanguage.RUSSIAN) dual.russianCues else dual.englishCues
+        Result.success(cues)
     }
 
     private fun extractVideoId(url: String): String? {
@@ -487,7 +520,7 @@ class VotApiClient(
         return translateCues(parsedCues, targetLang.code)
     }
 
-    private suspend fun translateCues(
+    suspend fun translateCues(
         cues: List<SubtitleCue>,
         targetLangCode: String = "ru"
     ): List<SubtitleCue> = coroutineScope {

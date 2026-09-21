@@ -25,8 +25,10 @@ import com.vot.player.data.sponsorblock.SponsorBlockClient
 import com.vot.player.data.update.AppUpdateInfo
 import com.vot.player.data.update.UpdateChecker
 import com.vot.player.data.update.UpdateDownloadState
+import com.vot.player.data.vot.DualSubtitles
 import com.vot.player.data.vot.VotApiClient
 import com.vot.player.data.youtube.YouTubeStreamExtractor
+import kotlinx.coroutines.Job
 import com.vot.player.export.ExportState
 import com.vot.player.export.VotExportManager
 import com.vot.player.player.VotPlayerManager
@@ -43,6 +45,7 @@ import com.vot.player.ui.theme.DarkBackground
 import com.vot.player.ui.theme.VotPlayerTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 
 class MainActivity : ComponentActivity() {
 
@@ -75,7 +78,10 @@ class MainActivity : ComponentActivity() {
 
     private var isLiveVoiceAvailable by mutableStateOf(true)
     private var hasSubtitles by mutableStateOf(false)
+    private var hasRussianSubtitles by mutableStateOf(false)
+    private var hasEnglishSubtitles by mutableStateOf(false)
     private var isCustomVoiceSupported by mutableStateOf(false)
+    private var translationJob: Job? = null
 
     private var currentTranslatedAudioUrl by mutableStateOf<String?>(null)
     private var currentPlayingMode by mutableStateOf(PlayerMode.NATIVE_PLAYER)
@@ -171,6 +177,7 @@ class MainActivity : ComponentActivity() {
                                 startPositionMs = currentStartPositionMs,
                                 playerManager = playerManager,
                                 statusMessage = statusMessage,
+                                isLoading = isLoading,
                                 currentTranslatedAudioUrl = currentTranslatedAudioUrl,
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
@@ -182,7 +189,7 @@ class MainActivity : ComponentActivity() {
                                 onSubtitlesChange = { newSubs ->
                                     selectedSubtitles = newSubs
                                     prefs.preferredSubtitlesMode = newSubs
-                                    playerManager.setSubtitlesEnabled(newSubs != SubtitlesMode.OFF)
+                                    playerManager.setSubtitlesMode(newSubs)
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
@@ -212,6 +219,8 @@ class MainActivity : ComponentActivity() {
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                                 hasSubtitles = effectiveHasSubtitles,
+                                hasRussianSubtitles = hasRussianSubtitles,
+                                hasEnglishSubtitles = hasEnglishSubtitles,
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -246,13 +255,16 @@ class MainActivity : ComponentActivity() {
                                 onSubtitlesChange = { newSubs ->
                                     selectedSubtitles = newSubs
                                     prefs.preferredSubtitlesMode = newSubs
-                                    playerManager.setSubtitlesEnabled(newSubs != SubtitlesMode.OFF)
+                                    playerManager.setSubtitlesMode(newSubs)
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
                                     selectedLanguage = newLang
                                     activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
+                                hasSubtitles = effectiveHasSubtitles,
+                                hasRussianSubtitles = hasRussianSubtitles,
+                                hasEnglishSubtitles = hasEnglishSubtitles,
                                 isSponsorBlockEnabled = isSponsorBlockEnabled,
                                 onSponsorBlockChange = { enabled ->
                                     isSponsorBlockEnabled = enabled
@@ -303,7 +315,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
-                                hasSubtitles = effectiveHasSubtitles,
                                 isCustomVoiceSupported = isCustomVoiceSupported,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -495,7 +506,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openYouTubeWebView(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+        translationJob?.cancel()
         playerManager.stopVideo()
+        playerManager.setVoiceoverAudio(null, startPlaying = false)
+        playerManager.setDualSubtitles(emptyList(), emptyList())
+        hasRussianSubtitles = false
+        hasEnglishSubtitles = false
+        hasSubtitles = false
+        currentTranslatedAudioUrl = null
+
         currentStartPositionMs = requestedStartPositionMs
         val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl) ?: ""
         val startSec = requestedStartPositionMs / 1000L
@@ -524,9 +543,9 @@ class MainActivity : ComponentActivity() {
         currentVideoInfo = info
         activeVideoUrl = rawUrl
         isLoading = true
-        statusMessage = "Loading translation..."
+        statusMessage = "Connecting to translation service..."
 
-        lifecycleScope.launch {
+        translationJob = lifecycleScope.launch {
             val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
             val votUrl = if (videoId.isNotEmpty()) "https://www.youtube.com/watch?v=$videoId" else rawUrl
 
@@ -535,6 +554,10 @@ class MainActivity : ComponentActivity() {
                     val segments = sponsorBlockClient.getSkipSegments(videoId)
                     playerManager.setSponsorSegments(segments)
                 }
+            }
+
+            val subtitlesDeferred = async {
+                votApiClient.getDualSubtitles(votUrl)
             }
 
             val votResult = votApiClient.translateVideo(
@@ -546,12 +569,15 @@ class MainActivity : ComponentActivity() {
                 onProgress = { statusMessage = it }
             )
 
-            val subtitlesResult = votApiClient.getSubtitles(
-                videoUrl = votUrl,
-                targetLang = selectedLanguage
-            )
-            val cues = subtitlesResult.getOrDefault(emptyList())
-            hasSubtitles = cues.isNotEmpty()
+            val dualSubsResult = subtitlesDeferred.await()
+            val dualSubs = dualSubsResult.getOrNull()
+            val ruCues = dualSubs?.russianCues ?: emptyList()
+            val enCues = dualSubs?.englishCues ?: emptyList()
+            hasRussianSubtitles = ruCues.isNotEmpty()
+            hasEnglishSubtitles = enCues.isNotEmpty()
+            hasSubtitles = hasRussianSubtitles || hasEnglishSubtitles
+            playerManager.setDualSubtitles(ruCues, enCues)
+            playerManager.setSubtitlesMode(selectedSubtitles)
 
             val audioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = audioUrl
@@ -581,11 +607,12 @@ class MainActivity : ComponentActivity() {
                 statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
             }
 
-            playerManager.setSubtitles(cues)
-            playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
-
             if (!audioUrl.isNullOrEmpty()) {
-                playerManager.setVoiceoverAudio(audioUrl)
+                playerManager.setVoiceoverAudio(
+                    audioUrl = audioUrl,
+                    startPlaying = true,
+                    isInitialStart = (requestedStartPositionMs == 0L)
+                )
             }
 
             historyDb.saveOrUpdate(
@@ -606,10 +633,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openNativePlayer(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+        translationJob?.cancel()
         currentPlayingMode = PlayerMode.NATIVE_PLAYER
         activeVideoUrl = rawUrl
         isLoading = true
         statusMessage = "Resolving video stream..."
+        playerManager.setVoiceoverAudio(null, startPlaying = false)
+        playerManager.setDualSubtitles(emptyList(), emptyList())
+        hasRussianSubtitles = false
+        hasEnglishSubtitles = false
+        hasSubtitles = false
+        currentTranslatedAudioUrl = null
 
         val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl)
         if (videoId != null) {
@@ -625,7 +659,7 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        lifecycleScope.launch {
+        translationJob = lifecycleScope.launch {
             val streamResult = streamExtractor.extract(rawUrl)
             if (streamResult.isFailure) {
                 playerManager.stopVideo()
@@ -654,6 +688,10 @@ class MainActivity : ComponentActivity() {
                     val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
                     val votUrl = "https://www.youtube.com/watch?v=$videoId"
 
+                    val subtitlesDeferred = async {
+                        votApiClient.getDualSubtitles(votUrl)
+                    }
+
                     val votResult = votApiClient.translateVideo(
                         videoUrl = votUrl,
                         durationSeconds = 0.0,
@@ -663,12 +701,15 @@ class MainActivity : ComponentActivity() {
                         onProgress = { statusMessage = it }
                     )
 
-                    val subtitlesResult = votApiClient.getSubtitles(
-                        videoUrl = votUrl,
-                        targetLang = selectedLanguage
-                    )
-                    val cues = subtitlesResult.getOrDefault(emptyList())
-                    hasSubtitles = cues.isNotEmpty()
+                    val dualSubsResult = subtitlesDeferred.await()
+                    val dualSubs = dualSubsResult.getOrNull()
+                    val ruCues = dualSubs?.russianCues ?: emptyList()
+                    val enCues = dualSubs?.englishCues ?: emptyList()
+                    hasRussianSubtitles = ruCues.isNotEmpty()
+                    hasEnglishSubtitles = enCues.isNotEmpty()
+                    hasSubtitles = hasRussianSubtitles || hasEnglishSubtitles
+                    playerManager.setDualSubtitles(ruCues, enCues)
+                    playerManager.setSubtitlesMode(selectedSubtitles)
 
                     val resumePositionMs = if (requestedStartPositionMs > 0L) {
                         requestedStartPositionMs
@@ -710,11 +751,12 @@ class MainActivity : ComponentActivity() {
                         statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
                     }
 
-                    playerManager.setSubtitles(cues)
-                    playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
-
                     if (!translatedAudioUrl.isNullOrEmpty()) {
-                        playerManager.setVoiceoverAudio(translatedAudioUrl)
+                        playerManager.setVoiceoverAudio(
+                            audioUrl = translatedAudioUrl,
+                            startPlaying = true,
+                            isInitialStart = (resumePositionMs == 0L)
+                        )
                     }
 
                     historyDb.saveOrUpdate(
@@ -740,7 +782,7 @@ class MainActivity : ComponentActivity() {
 
             val videoInfo = streamResult.getOrThrow()
             currentVideoInfo = videoInfo
-            statusMessage = "Requesting AI voice-over translation..."
+            statusMessage = "Requesting Russian voice-over translation..."
 
             if (isSponsorBlockEnabled && videoInfo.platform == PlatformType.YOUTUBE) {
                 launch {
@@ -773,6 +815,10 @@ class MainActivity : ComponentActivity() {
                 videoInfo.rawUrl
             }
 
+            val subtitlesDeferred = async {
+                votApiClient.getDualSubtitles(votUrl)
+            }
+
             val votResult = votApiClient.translateVideo(
                 videoUrl = votUrl,
                 durationSeconds = videoInfo.durationSeconds.toDouble(),
@@ -782,12 +828,15 @@ class MainActivity : ComponentActivity() {
                 onProgress = { statusMessage = it }
             )
 
-            val subtitlesResult = votApiClient.getSubtitles(
-                videoUrl = votUrl,
-                targetLang = selectedLanguage
-            )
-            val cues = subtitlesResult.getOrDefault(emptyList())
-            hasSubtitles = cues.isNotEmpty()
+            val dualSubsResult = subtitlesDeferred.await()
+            val dualSubs = dualSubsResult.getOrNull()
+            val ruCues = dualSubs?.russianCues ?: emptyList()
+            val enCues = dualSubs?.englishCues ?: emptyList()
+            hasRussianSubtitles = ruCues.isNotEmpty()
+            hasEnglishSubtitles = enCues.isNotEmpty()
+            hasSubtitles = hasRussianSubtitles || hasEnglishSubtitles
+            playerManager.setDualSubtitles(ruCues, enCues)
+            playerManager.setSubtitlesMode(selectedSubtitles)
 
             val translatedAudioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = translatedAudioUrl
@@ -834,10 +883,12 @@ class MainActivity : ComponentActivity() {
             loadHistory()
 
             if (!translatedAudioUrl.isNullOrEmpty()) {
-                playerManager.setVoiceoverAudio(translatedAudioUrl)
+                playerManager.setVoiceoverAudio(
+                    audioUrl = translatedAudioUrl,
+                    startPlaying = true,
+                    isInitialStart = (resumePositionMs == 0L)
+                )
             }
-            playerManager.setSubtitles(cues)
-            playerManager.setSubtitlesEnabled(selectedSubtitles != SubtitlesMode.OFF)
         }
     }
 

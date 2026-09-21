@@ -65,7 +65,8 @@ enum class TargetLanguage(val code: String, val displayName: String) {
     ENGLISH("en", "English")
 }
 
-enum class SubtitlesMode(val label: String) {
-    OFF("Subtitles Off"),
-    RUSSIAN("Russian")
+enum class SubtitlesMode(val label: String, val langCode: String?) {
+    OFF("Subtitles Off", null),
+    RUSSIAN("Russian", "ru"),
+    ENGLISH("English (Original)", "en")
 }

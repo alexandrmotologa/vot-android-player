@@ -16,6 +16,7 @@ import androidx.media3.common.C
 import androidx.media3.session.MediaSession
 import com.vot.player.MainActivity
 import com.vot.player.data.model.SubtitleCue
+import com.vot.player.data.model.SubtitlesMode
 import com.vot.player.data.model.UniversalVideoInfo
 import com.vot.player.data.model.VideoQuality
 import com.vot.player.data.sponsorblock.SponsorSegment
@@ -59,6 +60,15 @@ class VotPlayerManager(
     private val _hasSubtitles = MutableStateFlow(false)
     val hasSubtitles: StateFlow<Boolean> = _hasSubtitles.asStateFlow()
 
+    private val _hasRussianSubtitles = MutableStateFlow(false)
+    val hasRussianSubtitles: StateFlow<Boolean> = _hasRussianSubtitles.asStateFlow()
+
+    private val _hasEnglishSubtitles = MutableStateFlow(false)
+    val hasEnglishSubtitles: StateFlow<Boolean> = _hasEnglishSubtitles.asStateFlow()
+
+    private val _subtitlesMode = MutableStateFlow(SubtitlesMode.OFF)
+    val subtitlesMode: StateFlow<SubtitlesMode> = _subtitlesMode.asStateFlow()
+
     private val _playbackSpeed = MutableStateFlow(1.0f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
@@ -80,7 +90,10 @@ class VotPlayerManager(
 
     private var currentVideoInfo: UniversalVideoInfo? = null
     private var currentVoiceoverAudioUrl: String? = null
+    private var russianSubtitleCues: List<SubtitleCue> = emptyList()
+    private var englishSubtitleCues: List<SubtitleCue> = emptyList()
     private var subtitleCues: List<SubtitleCue> = emptyList()
+    private var currentSubtitlesMode: SubtitlesMode = SubtitlesMode.OFF
     private var isSubtitlesEnabled: Boolean = false
     private var syncJob: Job? = null
     private var lastNonZeroOriginalVolume: Float = 0.20f
@@ -227,7 +240,7 @@ class VotPlayerManager(
         voiceoverPlayer.playWhenReady = true
     }
 
-    fun setVoiceoverAudio(audioUrl: String?, startPlaying: Boolean = true) {
+    fun setVoiceoverAudio(audioUrl: String?, startPlaying: Boolean = true, isInitialStart: Boolean = false) {
         currentVoiceoverAudioUrl = audioUrl
         if (!audioUrl.isNullOrEmpty()) {
             val audioItem = MediaItem.fromUri(audioUrl)
@@ -241,7 +254,12 @@ class VotPlayerManager(
             } else {
                 _currentPositionMs.value
             }
-            if (currentPos > 0L) {
+
+            // If initial start (video opened from 0:00) and video ran ahead < 8 seconds while translation was loading:
+            // Sync both back to 0:00 so user never misses the start of speech!
+            if (isInitialStart && currentPos < 8000L) {
+                seekTo(0L)
+            } else if (currentPos > 0L) {
                 voiceoverPlayer.seekTo(currentPos)
             }
 
@@ -250,6 +268,9 @@ class VotPlayerManager(
                 voiceoverPlayer.play()
                 _isPlaying.value = true
             }
+        } else {
+            voiceoverPlayer.stop()
+            voiceoverPlayer.clearMediaItems()
         }
     }
 
@@ -339,7 +360,11 @@ class VotPlayerManager(
         videoPlayer.clearMediaItems()
         voiceoverPlayer.stop()
         voiceoverPlayer.clearMediaItems()
+        russianSubtitleCues = emptyList()
+        englishSubtitleCues = emptyList()
         subtitleCues = emptyList()
+        _hasRussianSubtitles.value = false
+        _hasEnglishSubtitles.value = false
         _hasSubtitles.value = false
         _currentSubtitle.value = null
         setPlaybackSpeed(1.0f)
@@ -448,27 +473,57 @@ class VotPlayerManager(
         webVideoController?.setPlaybackSpeed(clamped)
     }
 
+    fun setDualSubtitles(ruCues: List<SubtitleCue>, enCues: List<SubtitleCue>) {
+        russianSubtitleCues = ruCues
+        englishSubtitleCues = enCues
+        subtitleCues = ruCues.ifEmpty { enCues }
+        _hasRussianSubtitles.value = ruCues.isNotEmpty()
+        _hasEnglishSubtitles.value = enCues.isNotEmpty()
+        _hasSubtitles.value = ruCues.isNotEmpty() || enCues.isNotEmpty()
+        updateSubtitles(_currentPositionMs.value)
+    }
+
     fun setSubtitles(cues: List<SubtitleCue>) {
+        russianSubtitleCues = cues
         subtitleCues = cues
-        _hasSubtitles.value = cues.isNotEmpty()
+        _hasRussianSubtitles.value = cues.isNotEmpty()
+        _hasSubtitles.value = cues.isNotEmpty() || englishSubtitleCues.isNotEmpty()
+        updateSubtitles(_currentPositionMs.value)
+    }
+
+    fun setSubtitlesMode(mode: SubtitlesMode) {
+        currentSubtitlesMode = mode
+        isSubtitlesEnabled = (mode != SubtitlesMode.OFF)
+        _subtitlesMode.value = mode
         updateSubtitles(_currentPositionMs.value)
     }
 
     fun setSubtitlesEnabled(enabled: Boolean) {
         isSubtitlesEnabled = enabled
         if (!enabled) {
-            _currentSubtitle.value = null
-        } else {
-            updateSubtitles(_currentPositionMs.value)
+            currentSubtitlesMode = SubtitlesMode.OFF
+        } else if (currentSubtitlesMode == SubtitlesMode.OFF) {
+            currentSubtitlesMode = if (_hasRussianSubtitles.value) SubtitlesMode.RUSSIAN else SubtitlesMode.ENGLISH
         }
+        _subtitlesMode.value = currentSubtitlesMode
+        updateSubtitles(_currentPositionMs.value)
     }
 
     private fun updateSubtitles(posMs: Long) {
-        if (!isSubtitlesEnabled || subtitleCues.isEmpty()) {
+        if (!isSubtitlesEnabled || currentSubtitlesMode == SubtitlesMode.OFF) {
             if (_currentSubtitle.value != null) _currentSubtitle.value = null
             return
         }
-        val match = subtitleCues.firstOrNull { posMs in it.startTimeMs..it.endTimeMs }
+        val activeCues = when (currentSubtitlesMode) {
+            SubtitlesMode.OFF -> emptyList()
+            SubtitlesMode.RUSSIAN -> russianSubtitleCues.ifEmpty { subtitleCues }
+            SubtitlesMode.ENGLISH -> englishSubtitleCues
+        }
+        if (activeCues.isEmpty()) {
+            if (_currentSubtitle.value != null) _currentSubtitle.value = null
+            return
+        }
+        val match = activeCues.firstOrNull { posMs in it.startTimeMs..it.endTimeMs }
         _currentSubtitle.value = match?.text
     }
 

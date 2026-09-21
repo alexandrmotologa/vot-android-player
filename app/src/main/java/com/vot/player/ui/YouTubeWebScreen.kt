@@ -12,6 +12,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.ByteArrayInputStream
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -52,6 +57,7 @@ fun YouTubeWebScreen(
     startPositionMs: Long = 0L,
     playerManager: VotPlayerManager,
     statusMessage: String? = null,
+    isLoading: Boolean = false,
     currentTranslatedAudioUrl: String? = null,
     selectedVoiceType: VoiceType,
     onVoiceTypeChange: (VoiceType) -> Unit,
@@ -64,17 +70,24 @@ fun YouTubeWebScreen(
     onNavigateBack: () -> Unit,
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
+    hasRussianSubtitles: Boolean = true,
+    hasEnglishSubtitles: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showControlsSheet by remember { mutableStateOf(false) }
     var pageTitle by remember { mutableStateOf("YouTube") }
     var isWebLoading by remember { mutableStateOf(true) }
+    var lastNavigatedSpaVideoId by remember { mutableStateOf<String?>(null) }
 
     val originalVolume by playerManager.originalVolume.collectAsState()
     val voiceoverVolume by playerManager.voiceoverVolume.collectAsState()
     val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
-    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles
+    val managerHasRussianSubtitles by playerManager.hasRussianSubtitles.collectAsState()
+    val managerHasEnglishSubtitles by playerManager.hasEnglishSubtitles.collectAsState()
+    val effectiveHasRussian = hasRussianSubtitles || managerHasRussianSubtitles
+    val effectiveHasEnglish = hasEnglishSubtitles || managerHasEnglishSubtitles
+    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasEnglish
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -119,7 +132,15 @@ fun YouTubeWebScreen(
                     }
                 }
             },
+            onDualCaptionsReceived = { ruJson, enJson ->
+                coroutineScope.launch {
+                    val ruCues = if (ruJson.isNotBlank()) votApiClient.parseSubtitles(ruJson) else emptyList()
+                    val enCues = if (enJson.isNotBlank()) votApiClient.parseSubtitles(enJson) else emptyList()
+                    playerManager.setDualSubtitles(ruCues, enCues)
+                }
+            },
             onUrlChanged = { newUrl ->
+                lastNavigatedSpaVideoId = com.vot.player.data.youtube.YouTubeStreamExtractor.extractVideoId(newUrl)
                 onVideoUrlChanged(newUrl)
             }
         )
@@ -325,7 +346,7 @@ fun YouTubeWebScreen(
                 update = { webView ->
                     val currentId = com.vot.player.data.youtube.YouTubeStreamExtractor.extractVideoId(webView.url.orEmpty())
                     val targetId = com.vot.player.data.youtube.YouTubeStreamExtractor.extractVideoId(videoUrl)
-                    if (targetId != null && targetId != currentId) {
+                    if (targetId != null && targetId != currentId && targetId != lastNavigatedSpaVideoId) {
                         webView.loadUrl(videoUrl)
                     }
                 },
@@ -337,6 +358,53 @@ fun YouTubeWebScreen(
                     color = AccentRed,
                     modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
                 )
+            }
+
+            // Top Status Notification Banner
+            AnimatedVisibility(
+                visible = isLoading || !statusMessage.isNullOrEmpty(),
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xEE1E1E28),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isLoading) AccentRed.copy(alpha = 0.7f) else Color(0xFF4CAF50).copy(alpha = 0.7f)
+                    ),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = AccentRed
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = statusMessage ?: if (isLoading) "Loading translation..." else "Ready",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
 
             // Subtitles Overlay
@@ -496,7 +564,8 @@ fun YouTubeWebScreen(
 
                     // Subtitles Controls
                     Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
-                    if (!effectiveHasSubtitles) {
+                    val anySubtitlesAvailable = effectiveHasSubtitles || effectiveHasRussian || effectiveHasEnglish
+                    if (!anySubtitlesAvailable) {
                         Text(
                             text = "Notice: Subtitles are not available for this video",
                             color = Color(0xFFE5A93C),
@@ -510,7 +579,11 @@ fun YouTubeWebScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         SubtitlesMode.values().forEach { sub ->
-                            val isEnabled = sub == SubtitlesMode.OFF || effectiveHasSubtitles
+                            val isEnabled = when (sub) {
+                                SubtitlesMode.OFF -> true
+                                SubtitlesMode.RUSSIAN -> effectiveHasRussian || effectiveHasSubtitles
+                                SubtitlesMode.ENGLISH -> effectiveHasEnglish || effectiveHasSubtitles
+                            }
                             FilterChip(
                                 selected = selectedSubtitles == sub,
                                 onClick = { if (isEnabled) onSubtitlesChange(sub) },

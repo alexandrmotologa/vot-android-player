@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
@@ -83,6 +85,8 @@ fun PlayerScreen(
     onExportAudio: () -> Unit,
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
+    hasRussianSubtitles: Boolean = true,
+    hasEnglishSubtitles: Boolean = true,
     isCustomVoiceSupported: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -97,7 +101,11 @@ fun PlayerScreen(
     val selectedQuality by playerManager.selectedQuality.collectAsState()
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
     val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
-    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles
+    val managerHasRussianSubtitles by playerManager.hasRussianSubtitles.collectAsState()
+    val managerHasEnglishSubtitles by playerManager.hasEnglishSubtitles.collectAsState()
+    val effectiveHasRussian = hasRussianSubtitles || managerHasRussianSubtitles
+    val effectiveHasEnglish = hasEnglishSubtitles || managerHasEnglishSubtitles
+    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasEnglish
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -717,6 +725,55 @@ fun PlayerScreen(
             }
         }
 
+        // Animated Status Notification Pill / Loader
+        AnimatedVisibility(
+            visible = isLoading || !statusMessage.isNullOrEmpty(),
+            enter = fadeIn() + slideInVertically { -it },
+            exit = fadeOut() + slideOutVertically { -it },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .displayCutoutPadding()
+                .padding(top = if (isLandscape) 8.dp else 16.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xEE1E1E28),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isLoading) AccentRed.copy(alpha = 0.7f) else Color(0xFF4CAF50).copy(alpha = 0.7f)
+                ),
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentRed
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = statusMessage ?: if (isLoading) "Loading translation..." else "Ready",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
         // Settings Dialog
         if (showSettingsDialog) {
             SettingsDialog(
@@ -745,6 +802,8 @@ fun PlayerScreen(
                 onExportAudioClick = onExportAudio,
                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                 hasSubtitles = effectiveHasSubtitles,
+                hasRussianSubtitles = effectiveHasRussian,
+                hasEnglishSubtitles = effectiveHasEnglish,
                 isCustomVoiceSupported = isCustomVoiceSupported,
                 onDismiss = { showSettingsDialog = false }
             )
