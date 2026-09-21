@@ -24,6 +24,7 @@ import java.util.regex.Pattern
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
+import android.webkit.CookieManager
 import okhttp3.FormBody
 
 data class MultiSubtitles(
@@ -458,15 +459,23 @@ class VotApiClient(
             }
         } catch (_: Exception) {}
 
+        val youtubeCookie = try {
+            CookieManager.getInstance().getCookie("https://www.youtube.com")
+        } catch (_: Exception) {
+            null
+        }
+
         // 2. Fallback: Parse watch page HTML for captionTracks
         if (captionTracksArray == null || captionTracksArray.length() == 0) {
             try {
-                val pageReq = Request.Builder()
+                val pageReqBuilder = Request.Builder()
                     .url("https://www.youtube.com/watch?v=$videoId")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
                     .header("Accept-Language", "en-US,en;q=0.9")
-                    .build()
-                val pageResp = okHttpClient.newCall(pageReq).execute()
+                if (!youtubeCookie.isNullOrEmpty()) {
+                    pageReqBuilder.header("Cookie", youtubeCookie)
+                }
+                val pageResp = okHttpClient.newCall(pageReqBuilder.build()).execute()
                 val html = pageResp.body?.string().orEmpty()
                 val directPattern = Pattern.compile("\"captionTracks\":\\s*(\\[.+?\\])")
                 val directMatcher = directPattern.matcher(html)
@@ -507,12 +516,14 @@ class VotApiClient(
             if (rawUrl.isBlank()) return emptyList()
             // 1. Try direct raw url (preserves valid signature and XML/srv format)
             try {
-                val req = Request.Builder()
+                val reqBuilder = Request.Builder()
                     .url(rawUrl)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                     .header("Referer", "https://www.youtube.com/")
-                    .build()
-                val resp = okHttpClient.newCall(req).execute()
+                if (!youtubeCookie.isNullOrEmpty()) {
+                    reqBuilder.header("Cookie", youtubeCookie)
+                }
+                val resp = okHttpClient.newCall(reqBuilder.build()).execute()
                 if (resp.isSuccessful) {
                     val text = resp.body?.string().orEmpty()
                     val cues = parseSubtitles(text)
@@ -524,12 +535,14 @@ class VotApiClient(
             if (!rawUrl.contains("fmt=")) {
                 try {
                     val json3Url = if (rawUrl.contains("?")) "$rawUrl&fmt=json3" else "$rawUrl?fmt=json3"
-                    val req = Request.Builder()
+                    val reqBuilder = Request.Builder()
                         .url(json3Url)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                         .header("Referer", "https://www.youtube.com/")
-                        .build()
-                    val resp = okHttpClient.newCall(req).execute()
+                    if (!youtubeCookie.isNullOrEmpty()) {
+                        reqBuilder.header("Cookie", youtubeCookie)
+                    }
+                    val resp = okHttpClient.newCall(reqBuilder.build()).execute()
                     if (resp.isSuccessful) {
                         val text = resp.body?.string().orEmpty()
                         val cues = parseSubtitles(text)
