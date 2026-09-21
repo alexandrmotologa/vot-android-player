@@ -2,6 +2,7 @@ package com.vot.player.ui
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -75,8 +76,9 @@ fun HistoryScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 48.dp, bottom = 32.dp)
+            contentPadding = PaddingValues(top = 16.dp, bottom = 40.dp)
         ) {
             // Header
             item {
@@ -211,9 +213,9 @@ fun HistoryScreen(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
                     ),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     trailingIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
                             if (inputUrl.isNotEmpty()) {
                                 IconButton(onClick = { inputUrl = "" }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Clear", tint = TextSecondary)
@@ -233,7 +235,7 @@ fun HistoryScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
                     onClick = {
@@ -242,15 +244,18 @@ fun HistoryScreen(
                         }
                     },
                     enabled = inputUrl.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
-                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentRed,
+                        disabledContainerColor = AccentRed.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(50.dp)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Translate & Play", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Translate & Play", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))
@@ -388,10 +393,11 @@ fun ContinueWatchingCard(
     } else 0f
 
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color(0x22FFFFFF)),
         colors = CardDefaults.cardColors(containerColor = DarkCard),
         modifier = Modifier
-            .width(220.dp)
+            .width(230.dp)
             .clickable { onClick() }
     ) {
         Column {
@@ -459,7 +465,8 @@ fun HistoryListItem(
     onDelete: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color(0x18FFFFFF)),
         colors = CardDefaults.cardColors(containerColor = DarkCard),
         modifier = Modifier
             .fillMaxWidth()

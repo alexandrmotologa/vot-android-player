@@ -40,6 +40,7 @@ import com.vot.player.data.model.TargetLanguage
 import com.vot.player.data.model.VoiceType
 import com.vot.player.player.VotPlayerManager
 import com.vot.player.ui.components.DualVolumeBar
+import com.vot.player.ui.components.SettingsBottomSheet
 import com.vot.player.ui.components.SubtitleOverlay
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.DarkBackground
@@ -515,137 +516,41 @@ fun YouTubeWebScreen(
 
         // VOT Controls Bottom Sheet
         if (showControlsSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showControlsSheet = false },
-                containerColor = DarkCard,
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 32.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(
-                        text = "Voice-Over & Volume Controls",
-                        color = TextPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Dual Volume Bar
-                    DualVolumeBar(
-                        originalVolume = originalVolume,
-                        voiceoverVolume = voiceoverVolume,
-                        onOriginalVolumeChange = { vol ->
-                            playerManager.setOriginalVolume(vol)
-                            webViewRef?.evaluateJavascript("window.setOriginalVolume($vol);", null)
-                        },
-                        onVoiceoverVolumeChange = { vol ->
-                            playerManager.setVoiceoverVolume(vol)
-                        },
-                        onToggleOriginalMute = {
-                            playerManager.toggleOriginalMute()
-                            webViewRef?.evaluateJavascript("window.setOriginalVolume(${playerManager.originalVolume.value});", null)
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color(0x22FFFFFF))
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Voice Type (Standard vs Live)
-                    Text(text = "Voice Synthesis", color = TextSecondary, fontSize = 13.sp)
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        VoiceType.values().forEach { voice ->
-                            val isVoiceEnabled = voice != VoiceType.LIVE_VOICE || isLiveVoiceAvailable
-                            FilterChip(
-                                selected = selectedVoiceType == voice,
-                                onClick = { onVoiceTypeChange(voice) },
-                                enabled = isVoiceEnabled,
-                                label = { Text(voice.label) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AccentRed,
-                                    selectedLabelColor = Color.White,
-                                    disabledContainerColor = Color(0x11FFFFFF),
-                                    disabledLabelColor = Color.Gray
-                                )
-                            )
-                        }
-                    }
-                    if (!isLiveVoiceAvailable) {
-                        Text(
-                            text = "Notice: Only standard voice is provided by Yandex for this video",
-                            color = Color(0xFFE5A93C),
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color(0x22FFFFFF))
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Subtitles Controls
-                    Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
-                    val anySubtitlesAvailable = effectiveHasSubtitles || effectiveHasRussian || effectiveHasRomanian || effectiveHasEnglish
-                    if (!anySubtitlesAvailable) {
-                        Text(
-                            text = "Notice: Subtitles are not available for this video",
-                            color = Color(0xFFE5A93C),
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        SubtitlesMode.values().forEach { sub ->
-                            val isEnabled = when (sub) {
-                                SubtitlesMode.OFF -> true
-                                SubtitlesMode.RUSSIAN -> effectiveHasRussian || effectiveHasSubtitles
-                                SubtitlesMode.ROMANIAN -> effectiveHasRomanian || effectiveHasSubtitles
-                                SubtitlesMode.ENGLISH -> effectiveHasEnglish || effectiveHasSubtitles
-                            }
-                            FilterChip(
-                                selected = selectedSubtitles == sub,
-                                onClick = { if (isEnabled) onSubtitlesChange(sub) },
-                                enabled = isEnabled,
-                                label = { Text(sub.label) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AccentRed,
-                                    selectedLabelColor = Color.White,
-                                    disabledContainerColor = Color(0x11FFFFFF),
-                                    disabledLabelColor = Color.Gray
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Switch to Native Player Button
-                    OutlinedButton(
-                        onClick = {
-                            showControlsSheet = false
-                            onSwitchToNativePlayer()
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Switch to Native Player (Ad-Free, 4K, PiP)")
-                    }
-                }
-            }
+            SettingsBottomSheet(
+                selectedVoiceType = selectedVoiceType,
+                onVoiceTypeChange = onVoiceTypeChange,
+                selectedSubtitles = selectedSubtitles,
+                onSubtitlesChange = onSubtitlesChange,
+                selectedLanguage = selectedLanguage,
+                onLanguageChange = onLanguageChange,
+                currentSpeed = 1.0f,
+                onSpeedChange = { speed ->
+                    webViewRef?.evaluateJavascript("document.querySelector('video')?.playbackRate = $speed;", null)
+                },
+                isLiveVoiceAvailable = isLiveVoiceAvailable,
+                hasSubtitles = effectiveHasSubtitles,
+                hasRussianSubtitles = effectiveHasRussian,
+                hasRomanianSubtitles = effectiveHasRomanian,
+                hasEnglishSubtitles = effectiveHasEnglish,
+                originalVolume = originalVolume,
+                voiceoverVolume = voiceoverVolume,
+                onOriginalVolumeChange = { vol ->
+                    playerManager.setOriginalVolume(vol)
+                    webViewRef?.evaluateJavascript("window.setOriginalVolume($vol);", null)
+                },
+                onVoiceoverVolumeChange = { vol ->
+                    playerManager.setVoiceoverVolume(vol)
+                },
+                onToggleOriginalMute = {
+                    playerManager.toggleOriginalMute()
+                    webViewRef?.evaluateJavascript("window.setOriginalVolume(${playerManager.originalVolume.value});", null)
+                },
+                onSwitchToNativePlayer = {
+                    showControlsSheet = false
+                    onSwitchToNativePlayer()
+                },
+                onDismiss = { showControlsSheet = false }
+            )
         }
     }
 }

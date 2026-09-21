@@ -504,25 +504,32 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        if (isLandscape) {
-                            val act = context as? android.app.Activity
-                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        } else {
-                            onNavigateBack()
-                        }
-                    }) {
+                    IconButton(
+                        onClick = {
+                            if (isLandscape) {
+                                val act = context as? android.app.Activity
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                onNavigateBack()
+                            }
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x66000000))
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
                     Column(
                         modifier = Modifier
                             .weight(1f, fill = true)
-                            .padding(horizontal = 8.dp)
+                            .padding(horizontal = 10.dp)
                     ) {
                         Text(
                             text = videoTitle,
@@ -541,40 +548,63 @@ fun PlayerScreen(
                         )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = {
-                            val act = context as? android.app.Activity
-                            if (isLandscape) {
-                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            } else {
-                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            }
-                        }) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0x66000000))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val act = context as? android.app.Activity
+                                if (isLandscape) {
+                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                } else {
+                                    act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                }
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
                             Icon(
                                 imageVector = if (isLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                                 contentDescription = "Toggle Fullscreen",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                        IconButton(onClick = { playerManager.toggleAudioOnly() }) {
+                        IconButton(
+                            onClick = { playerManager.toggleAudioOnly() },
+                            modifier = Modifier.size(38.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Headphones,
                                 contentDescription = "Audio-Only Mode",
-                                tint = if (isAudioOnly) AccentRed else Color.White
+                                tint = if (isAudioOnly) AccentRed else Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                        IconButton(onClick = onEnterPiP) {
+                        IconButton(
+                            onClick = onEnterPiP,
+                            modifier = Modifier.size(38.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.PictureInPictureAlt,
                                 contentDescription = "Picture-in-Picture",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
-                        IconButton(onClick = { showSettingsDialog = true }) {
+                        IconButton(
+                            onClick = { showSettingsDialog = true },
+                            modifier = Modifier.size(38.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
