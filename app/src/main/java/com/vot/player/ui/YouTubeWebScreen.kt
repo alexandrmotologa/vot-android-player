@@ -40,6 +40,7 @@ import com.vot.player.ui.theme.DarkCard
 import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 import com.vot.player.web.VotWebBridge
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -69,19 +70,26 @@ fun YouTubeWebScreen(
     val originalVolume by playerManager.originalVolume.collectAsState()
     val voiceoverVolume by playerManager.voiceoverVolume.collectAsState()
 
-    // Handle back button: go back in web history if possible, else exit to Home
-    BackHandler {
-        if (webViewRef?.canGoBack() == true) {
-            webViewRef?.goBack()
-        } else {
-            onNavigateBack()
-        }
-    }
-
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
+    // Handle back button: return from landscape to portrait, or go back in web history, else exit to Home
+    BackHandler {
+        if (isLandscape) {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else if (webViewRef?.canGoBack() == true) {
+            webViewRef?.goBack()
+        } else {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            onNavigateBack()
+        }
+    }
+
+    val coroutineScope = rememberCoroutineScope()
+    val votApiClient = remember { com.vot.player.data.vot.VotApiClient() }
     val bridge = remember {
         VotWebBridge(
             onPlay = { playerManager.play() },
@@ -95,6 +103,14 @@ fun YouTubeWebScreen(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 } else {
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            },
+            onCaptionsReceived = { rawText ->
+                coroutineScope.launch {
+                    val cues = votApiClient.parseSubtitles(rawText)
+                    if (cues.isNotEmpty()) {
+                        playerManager.setSubtitles(cues)
+                    }
                 }
             }
         )
@@ -143,7 +159,14 @@ fun YouTubeWebScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        if (isLandscape) {
+                            val act = context as? android.app.Activity
+                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },

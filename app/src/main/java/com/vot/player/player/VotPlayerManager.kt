@@ -113,6 +113,11 @@ class VotPlayerManager(
         videoPlayer.volume = _originalVolume.value
         voiceoverPlayer.volume = _voiceoverVolume.value
 
+        videoPlayer.trackSelectionParameters = videoPlayer.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            .build()
+
         setupMediaSession()
 
         videoPlayer.addListener(object : Player.Listener {
@@ -206,10 +211,12 @@ class VotPlayerManager(
             voiceoverPlayer.setMediaSource(audioSource)
             voiceoverPlayer.prepare()
         }
-        voiceoverPlayer.volume = _voiceoverVolume.value
-
         if (startPositionMs > 0L) {
-            seekTo(startPositionMs)
+            _currentPositionMs.value = startPositionMs
+            videoPlayer.seekTo(startPositionMs)
+            if (voiceoverPlayer.mediaItemCount > 0) {
+                voiceoverPlayer.seekTo(startPositionMs)
+            }
         }
 
         videoPlayer.playWhenReady = true
@@ -225,7 +232,11 @@ class VotPlayerManager(
             voiceoverPlayer.volume = _voiceoverVolume.value
             voiceoverPlayer.prepare()
 
-            val currentPos = _currentPositionMs.value
+            val currentPos = if (videoPlayer.mediaItemCount > 0 && videoPlayer.currentPosition > 0L) {
+                videoPlayer.currentPosition
+            } else {
+                _currentPositionMs.value
+            }
             if (currentPos > 0L) {
                 voiceoverPlayer.seekTo(currentPos)
             }
@@ -309,8 +320,21 @@ class VotPlayerManager(
     }
 
     fun stopVideo() {
+        val pos = if (videoPlayer.mediaItemCount > 0 && videoPlayer.currentPosition > 0L) {
+            videoPlayer.currentPosition
+        } else {
+            _currentPositionMs.value
+        }
+        currentVideoInfo?.let { info ->
+            if (pos > 0L) {
+                val dur = if (_durationMs.value > 0L) _durationMs.value else videoPlayer.duration.coerceAtLeast(0L)
+                onPositionSaved?.invoke(info.id, pos, dur)
+            }
+        }
         videoPlayer.stop()
         videoPlayer.clearMediaItems()
+        voiceoverPlayer.stop()
+        voiceoverPlayer.clearMediaItems()
     }
 
     fun play() {
@@ -333,6 +357,16 @@ class VotPlayerManager(
         webVideoController?.pause()
         if (voiceoverPlayer.mediaItemCount > 0) {
             voiceoverPlayer.pause()
+        }
+        val pos = if (videoPlayer.mediaItemCount > 0 && videoPlayer.currentPosition > 0L) {
+            videoPlayer.currentPosition
+        } else {
+            _currentPositionMs.value
+        }
+        _currentPositionMs.value = pos
+        currentVideoInfo?.let { info ->
+            val dur = if (_durationMs.value > 0L) _durationMs.value else videoPlayer.duration.coerceAtLeast(0L)
+            onPositionSaved?.invoke(info.id, pos, dur)
         }
     }
 

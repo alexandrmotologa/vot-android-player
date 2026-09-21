@@ -11,7 +11,8 @@ class VotWebBridge(
     private val onTimeUpdate: (positionMs: Long, durationMs: Long) -> Unit = { _, _ -> },
     private val onRateChange: (rate: Float) -> Unit = {},
     private val onScreenTap: () -> Unit = {},
-    private val onFullscreenToggle: (Boolean) -> Unit = {}
+    private val onFullscreenToggle: (Boolean) -> Unit = {},
+    private val onCaptionsReceived: ((String) -> Unit)? = null
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -200,6 +201,35 @@ class VotWebBridge(
                 }, true);
 
                 // Periodic time & duration sync (every 500ms) to ensure duration & position never get out of sync
+                let captionsFetched = false;
+                function checkAndFetchCaptions() {
+                    if (captionsFetched) return;
+                    try {
+                        const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (p && typeof p.getOption === 'function') {
+                            const tracklist = p.getOption('captions', 'tracklist') || [];
+                            if (tracklist.length > 0) {
+                                let track = tracklist.find(t => t.languageCode === 'ru' || (t.vssId && t.vssId.includes('.ru')))
+                                    || tracklist.find(t => t.languageCode === 'en')
+                                    || tracklist[0];
+                                if (track && track.baseUrl) {
+                                    captionsFetched = true;
+                                    let cUrl = track.baseUrl;
+                                    if (!cUrl.includes('fmt=')) cUrl += '&fmt=json3';
+                                    fetch(cUrl)
+                                        .then(r => r.text())
+                                        .then(txt => {
+                                            if (txt && txt.length > 20 && window.VotAndroidBridge && window.VotAndroidBridge.onCaptionsLoaded) {
+                                                window.VotAndroidBridge.onCaptionsLoaded(txt);
+                                            }
+                                        })
+                                        .catch(() => {});
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+
                 setInterval(function() {
                     const v = document.querySelector('video');
                     if (v) {
@@ -208,6 +238,7 @@ class VotWebBridge(
                             notifyTime(v);
                         }
                     }
+                    checkAndFetchCaptions();
                 }, 500);
 
                 document.addEventListener('click', function(e) {
@@ -293,5 +324,10 @@ class VotWebBridge(
     @JavascriptInterface
     fun onFullscreenChanged(isFullscreen: Boolean) {
         mainHandler.post { onFullscreenToggle(isFullscreen) }
+    }
+
+    @JavascriptInterface
+    fun onCaptionsLoaded(rawJson: String) {
+        mainHandler.post { onCaptionsReceived?.invoke(rawJson) }
     }
 }

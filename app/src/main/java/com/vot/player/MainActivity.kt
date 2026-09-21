@@ -37,8 +37,11 @@ import com.vot.player.ui.components.ExportProgressDialog
 import com.vot.player.ui.components.PlayerModeDialog
 import com.vot.player.ui.components.SettingsDialog
 import com.vot.player.ui.components.UpdateDownloadDialog
+import android.content.pm.ActivityInfo
+import android.widget.Toast
 import com.vot.player.ui.theme.DarkBackground
 import com.vot.player.ui.theme.VotPlayerTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -78,6 +81,7 @@ class MainActivity : ComponentActivity() {
     private var currentPlayingMode by mutableStateOf(PlayerMode.NATIVE_PLAYER)
     private var preferredPlayerMode by mutableStateOf(PlayerMode.ASK_EVERY_TIME)
     private var pendingOpenUrl by mutableStateOf<String?>(null)
+    private var pendingOpenPositionMs by mutableStateOf(0L)
     private var showModeDialog by mutableStateOf(false)
     private var showSettingsFromHome by mutableStateOf(false)
     private var appUpdateInfo by mutableStateOf<AppUpdateInfo?>(null)
@@ -125,6 +129,9 @@ class MainActivity : ComponentActivity() {
             }
         )
         playerManager.setSponsorBlockEnabled(isSponsorBlockEnabled)
+        playerManager.onSponsorSkipped = { category ->
+            Toast.makeText(this@MainActivity, "SponsorBlock: Skipped $category", Toast.LENGTH_SHORT).show()
+        }
 
         loadHistory()
         checkUpdates()
@@ -182,14 +189,19 @@ class MainActivity : ComponentActivity() {
                                     activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 onNavigateBack = {
+                                    saveCurrentPlaybackPosition()
                                     playerManager.pause()
+                                    playerManager.stopVideo()
+                                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                     activeVideoUrl = null
                                     currentVideoInfo = null
-                                    loadHistory()
+                                    lifecycleScope.launch {
+                                        loadHistory()
+                                    }
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                                 hasSubtitles = hasSubtitles,
-                                modifier = Modifier.padding(innerPadding)
+                                modifier = Modifier.fillMaxSize()
                             )
                         } else {
                             // Mode 1: Native Player
@@ -243,10 +255,15 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onEnterPiP = { enterPictureInPicture() },
                                 onNavigateBack = {
+                                    saveCurrentPlaybackPosition()
                                     playerManager.pause()
+                                    playerManager.stopVideo()
+                                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                     activeVideoUrl = null
                                     currentVideoInfo = null
-                                    loadHistory()
+                                    lifecycleScope.launch {
+                                        loadHistory()
+                                    }
                                 },
                                 onExportVideo = {
                                     lifecycleScope.launch {
@@ -273,7 +290,7 @@ class MainActivity : ComponentActivity() {
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                                 hasSubtitles = hasSubtitles,
                                 isCustomVoiceSupported = isCustomVoiceSupported,
-                                modifier = Modifier.padding(innerPadding)
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     } else {
@@ -324,17 +341,20 @@ class MainActivity : ComponentActivity() {
                                     prefs.preferredPlayerMode = mode
                                 }
                                 val url = pendingOpenUrl!!
+                                val pos = pendingOpenPositionMs
                                 showModeDialog = false
                                 pendingOpenUrl = null
+                                pendingOpenPositionMs = 0L
                                 if (mode == PlayerMode.YOUTUBE_WEB) {
                                     openYouTubeWebView(url)
                                 } else {
-                                    openNativePlayer(url)
+                                    openNativePlayer(url, pos)
                                 }
                             },
                             onDismiss = {
                                 showModeDialog = false
                                 pendingOpenUrl = null
+                                pendingOpenPositionMs = 0L
                             }
                         )
                     }
@@ -450,6 +470,7 @@ class MainActivity : ComponentActivity() {
         val mode = preferredPlayerMode
         if (mode == PlayerMode.ASK_EVERY_TIME) {
             pendingOpenUrl = url
+            pendingOpenPositionMs = requestedStartPositionMs
             showModeDialog = true
         } else if (mode == PlayerMode.YOUTUBE_WEB) {
             openYouTubeWebView(url)
@@ -529,6 +550,12 @@ class MainActivity : ComponentActivity() {
             isLoading = false
             if (votResult.isSuccess) {
                 statusMessage = "Translation active (Russian)"
+                launch {
+                    delay(2500L)
+                    if (statusMessage == "Translation active (Russian)") {
+                        statusMessage = null
+                    }
+                }
             } else {
                 statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
             }
@@ -687,7 +714,9 @@ class MainActivity : ComponentActivity() {
                 requestedStartPositionMs
             } else {
                 val existing = historyDb.getHistoryItem(videoInfo.id)
-                existing?.lastPositionMs ?: 0L
+                val lastPos = existing?.lastPositionMs ?: 0L
+                val dur = existing?.durationMs ?: (videoInfo.durationSeconds * 1000L)
+                if (dur > 0L && (dur - lastPos) < 10_000L) 0L else lastPos
             }
 
             // Start native video playback immediately with ExoPlayer
@@ -739,17 +768,24 @@ class MainActivity : ComponentActivity() {
             isLoading = false
             if (votResult.isSuccess) {
                 statusMessage = "Translation active (Russian)"
+                launch {
+                    delay(2500L)
+                    if (statusMessage == "Translation active (Russian)") {
+                        statusMessage = null
+                    }
+                }
             } else {
                 statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
             }
 
+            val currentPos = playerManager.currentPositionMs.value.takeIf { it > 0L } ?: resumePositionMs
             historyDb.saveOrUpdate(
                 WatchHistoryItem(
                     videoId = videoInfo.id,
                     url = rawUrl,
                     title = videoInfo.title,
                     thumbnailUrl = videoInfo.thumbnailUrl ?: "",
-                    lastPositionMs = resumePositionMs,
+                    lastPositionMs = currentPos,
                     durationMs = videoInfo.durationSeconds * 1000L,
                     preferredVoice = selectedVoiceType.name.lowercase(),
                     originalVolume = playerManager.originalVolume.value,
@@ -782,8 +818,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun saveCurrentPlaybackPosition() {
+        val info = currentVideoInfo ?: return
+        val pos = playerManager.currentPositionMs.value.takeIf { it > 0L }
+            ?: playerManager.videoPlayer.currentPosition.coerceAtLeast(0L)
+        val dur = playerManager.durationMs.value.takeIf { it > 0L }
+            ?: playerManager.videoPlayer.duration.coerceAtLeast(0L)
+        if (pos > 0L) {
+            lifecycleScope.launch {
+                historyDb.updatePosition(info.id, pos, dur)
+                loadHistory()
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        saveCurrentPlaybackPosition()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        saveCurrentPlaybackPosition()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        saveCurrentPlaybackPosition()
         playerManager.release()
     }
 }

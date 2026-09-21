@@ -74,13 +74,24 @@ class WatchHistoryDatabase private constructor(context: Context) :
 
     suspend fun saveOrUpdate(item: WatchHistoryItem) = withContext(Dispatchers.IO) {
         val db = writableDatabase
+        val existing = getHistoryItem(item.videoId)
+        val finalPosition = if (item.lastPositionMs > 0L) {
+            item.lastPositionMs
+        } else {
+            existing?.lastPositionMs ?: 0L
+        }
+        val finalDuration = if (item.durationMs > 0L) {
+            item.durationMs
+        } else {
+            existing?.durationMs ?: 0L
+        }
         val values = ContentValues().apply {
             put(COL_VIDEO_ID, item.videoId)
             put(COL_URL, item.url)
             put(COL_TITLE, item.title)
             put(COL_THUMBNAIL, item.thumbnailUrl)
-            put(COL_POSITION, item.lastPositionMs)
-            put(COL_DURATION, item.durationMs)
+            put(COL_POSITION, finalPosition)
+            put(COL_DURATION, finalDuration)
             put(COL_UPDATED_AT, item.updatedAt)
             put(COL_VOICE, item.preferredVoice)
             put(COL_ORIG_VOL, item.originalVolume)
@@ -98,7 +109,17 @@ class WatchHistoryDatabase private constructor(context: Context) :
             }
             put(COL_UPDATED_AT, System.currentTimeMillis())
         }
-        db.update(TABLE_HISTORY, values, "$COL_VIDEO_ID = ?", arrayOf(videoId))
+        val rows = db.update(TABLE_HISTORY, values, "$COL_VIDEO_ID = ?", arrayOf(videoId))
+        if (rows == 0 && positionMs > 0L) {
+            values.put(COL_VIDEO_ID, videoId)
+            values.put(COL_URL, "https://www.youtube.com/watch?v=$videoId")
+            values.put(COL_TITLE, "YouTube Video")
+            values.put(COL_THUMBNAIL, "https://i.ytimg.com/vi/$videoId/hqdefault.jpg")
+            values.put(COL_VOICE, "standard")
+            values.put(COL_ORIG_VOL, 0.20f)
+            values.put(COL_VOICE_VOL, 1.0f)
+            db.insertWithOnConflict(TABLE_HISTORY, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        }
     }
 
     suspend fun getHistoryItem(videoId: String): WatchHistoryItem? = withContext(Dispatchers.IO) {

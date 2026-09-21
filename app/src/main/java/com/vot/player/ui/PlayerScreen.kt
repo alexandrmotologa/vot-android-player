@@ -24,6 +24,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebSettings
@@ -32,6 +33,7 @@ import android.webkit.WebViewClient
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.vot.player.data.model.*
@@ -46,6 +48,7 @@ import com.vot.player.ui.theme.TextPrimary
 import com.vot.player.ui.theme.TextSecondary
 import com.vot.player.web.VotWebBridge
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -159,11 +162,20 @@ fun PlayerScreen(
                             showControls = true
                             true
                         }
-                        Key.Back -> {
-                            if (showControls) {
+                        Key.Back, Key.Escape -> {
+                            if (showSettingsDialog) {
+                                showSettingsDialog = false
+                                true
+                            } else if (isLandscape) {
+                                val act = context as? android.app.Activity
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                true
+                            } else if (showControls) {
                                 showControls = false
                                 true
                             } else {
+                                val act = context as? android.app.Activity
+                                act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                 onNavigateBack()
                                 true
                             }
@@ -263,6 +275,8 @@ fun PlayerScreen(
                         PlayerView(ctx).apply {
                             player = playerManager.videoPlayer
                             useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            subtitleView?.visibility = View.GONE
                         }
                     },
                     modifier = Modifier.fillMaxSize()
@@ -270,6 +284,8 @@ fun PlayerScreen(
             } else if (!embeddedUrl.isNullOrEmpty()) {
                 // Minimalist Ad-Free Player (Zero comments, Zero recommendations, Zero headers)
                 var webViewRef by remember { mutableStateOf<WebView?>(null) }
+                val coroutineScope = rememberCoroutineScope()
+                val votApiClient = remember { com.vot.player.data.vot.VotApiClient() }
                 val bridge = remember {
                     VotWebBridge(
                         onPlay = { playerManager.play() },
@@ -284,6 +300,14 @@ fun PlayerScreen(
                                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                             } else {
                                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                            }
+                        },
+                        onCaptionsReceived = { rawText ->
+                            coroutineScope.launch {
+                                val cues = votApiClient.parseSubtitles(rawText)
+                                if (cues.isNotEmpty()) {
+                                    playerManager.setSubtitles(cues)
+                                }
                             }
                         }
                     )
@@ -387,7 +411,7 @@ fun PlayerScreen(
         )
 
         // Loading or Status banner
-        if (isLoading || statusMessage != null) {
+        if (isLoading) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -396,15 +420,30 @@ fun PlayerScreen(
                     .background(Color(0xCC111118), RoundedCornerShape(12.dp))
                     .padding(20.dp)
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(color = AccentRed, modifier = Modifier.size(36.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+                CircularProgressIndicator(color = AccentRed, modifier = Modifier.size(36.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = statusMessage ?: "Preparing player...",
                     color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
+                )
+            }
+        } else if (!statusMessage.isNullOrEmpty() && showControls) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xCC1A1A24),
+                contentColor = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = if (isLandscape) 48.dp else 68.dp)
+            ) {
+                Text(
+                    text = statusMessage,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                 )
             }
         }
@@ -430,7 +469,14 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        if (isLandscape) {
+                            val act = context as? android.app.Activity
+                            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
