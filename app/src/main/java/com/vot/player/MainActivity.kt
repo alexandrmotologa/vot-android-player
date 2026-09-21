@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private var preferredPlayerMode by mutableStateOf(PlayerMode.ASK_EVERY_TIME)
     private var pendingOpenUrl by mutableStateOf<String?>(null)
     private var pendingOpenPositionMs by mutableStateOf(0L)
+    private var currentStartPositionMs by mutableStateOf(0L)
     private var showModeDialog by mutableStateOf(false)
     private var showSettingsFromHome by mutableStateOf(false)
     private var appUpdateInfo by mutableStateOf<AppUpdateInfo?>(null)
@@ -165,6 +166,7 @@ class MainActivity : ComponentActivity() {
 
                             YouTubeWebScreen(
                                 videoUrl = webUrl,
+                                startPositionMs = currentStartPositionMs,
                                 playerManager = playerManager,
                                 statusMessage = statusMessage,
                                 currentTranslatedAudioUrl = currentTranslatedAudioUrl,
@@ -172,7 +174,7 @@ class MainActivity : ComponentActivity() {
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
                                     prefs.preferredVoiceType = newVoice
-                                    activeVideoUrl?.let { openYouTubeWebView(it) }
+                                    activeVideoUrl?.let { openYouTubeWebView(it, playerManager.currentPositionMs.value) }
                                 },
                                 selectedSubtitles = selectedSubtitles,
                                 onSubtitlesChange = { newSubs ->
@@ -183,10 +185,17 @@ class MainActivity : ComponentActivity() {
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
                                     selectedLanguage = newLang
-                                    activeVideoUrl?.let { openYouTubeWebView(it) }
+                                    activeVideoUrl?.let { openYouTubeWebView(it, playerManager.currentPositionMs.value) }
                                 },
                                 onSwitchToNativePlayer = {
                                     activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
+                                },
+                                onVideoUrlChanged = { newUrl ->
+                                    val newId = YouTubeStreamExtractor.extractVideoId(newUrl)
+                                    if (!newId.isNullOrEmpty() && newId != currentVideoInfo?.id) {
+                                        saveCurrentPlaybackPosition()
+                                        openYouTubeWebView(newUrl, 0L)
+                                    }
                                 },
                                 onNavigateBack = {
                                     saveCurrentPlaybackPosition()
@@ -252,6 +261,10 @@ class MainActivity : ComponentActivity() {
                                 onPlayerModeChange = { mode ->
                                     preferredPlayerMode = mode
                                     prefs.preferredPlayerMode = mode
+                                    if (mode == PlayerMode.YOUTUBE_WEB) {
+                                        val curPos = playerManager.currentPositionMs.value
+                                        activeVideoUrl?.let { openYouTubeWebView(it, curPos) }
+                                    }
                                 },
                                 onEnterPiP = { enterPictureInPicture() },
                                 onNavigateBack = {
@@ -346,7 +359,7 @@ class MainActivity : ComponentActivity() {
                                 pendingOpenUrl = null
                                 pendingOpenPositionMs = 0L
                                 if (mode == PlayerMode.YOUTUBE_WEB) {
-                                    openYouTubeWebView(url)
+                                    openYouTubeWebView(url, pos)
                                 } else {
                                     openNativePlayer(url, pos)
                                 }
@@ -473,19 +486,25 @@ class MainActivity : ComponentActivity() {
             pendingOpenPositionMs = requestedStartPositionMs
             showModeDialog = true
         } else if (mode == PlayerMode.YOUTUBE_WEB) {
-            openYouTubeWebView(url)
+            openYouTubeWebView(url, requestedStartPositionMs)
         } else {
             openNativePlayer(url, requestedStartPositionMs)
         }
     }
 
-    private fun openYouTubeWebView(rawUrl: String) {
+    private fun openYouTubeWebView(rawUrl: String, requestedStartPositionMs: Long = 0L) {
         playerManager.stopVideo()
+        currentStartPositionMs = requestedStartPositionMs
         val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl) ?: ""
+        val startSec = requestedStartPositionMs / 1000L
         val webUrl = if (videoId.isNotEmpty()) {
-            "https://m.youtube.com/watch?v=$videoId"
+            if (startSec > 0) "https://m.youtube.com/watch?v=$videoId&t=${startSec}s"
+            else "https://m.youtube.com/watch?v=$videoId"
         } else {
             rawUrl
+        }
+        if (requestedStartPositionMs > 0L) {
+            playerManager.syncWebPosition(requestedStartPositionMs, 0L)
         }
 
         val info = UniversalVideoInfo(
@@ -573,7 +592,7 @@ class MainActivity : ComponentActivity() {
                     url = rawUrl,
                     title = info.title,
                     thumbnailUrl = info.thumbnailUrl ?: "",
-                    lastPositionMs = 0L,
+                    lastPositionMs = requestedStartPositionMs,
                     durationMs = 0L,
                     preferredVoice = selectedVoiceType.name.lowercase(),
                     originalVolume = playerManager.originalVolume.value,

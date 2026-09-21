@@ -64,7 +64,7 @@ fun HistoryScreen(
     }
 
     val continueWatching = remember(historyItems) {
-        historyItems.filter { it.lastPositionMs > 5_000L && it.durationMs > 0L && (it.durationMs - it.lastPositionMs) > 10_000L }
+        historyItems.filter { it.lastPositionMs > 5_000L && (it.durationMs == 0L || (it.durationMs - it.lastPositionMs) > 10_000L) }
     }
 
     Box(

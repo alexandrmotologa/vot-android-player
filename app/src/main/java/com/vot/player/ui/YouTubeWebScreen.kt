@@ -6,9 +6,11 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,6 +49,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun YouTubeWebScreen(
     videoUrl: String,
+    startPositionMs: Long = 0L,
     playerManager: VotPlayerManager,
     statusMessage: String? = null,
     currentTranslatedAudioUrl: String? = null,
@@ -57,6 +60,7 @@ fun YouTubeWebScreen(
     selectedLanguage: TargetLanguage,
     onLanguageChange: (TargetLanguage) -> Unit,
     onSwitchToNativePlayer: () -> Unit,
+    onVideoUrlChanged: (String) -> Unit = {},
     onNavigateBack: () -> Unit,
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
@@ -112,6 +116,9 @@ fun YouTubeWebScreen(
                         playerManager.setSubtitles(cues)
                     }
                 }
+            },
+            onUrlChanged = { newUrl ->
+                onVideoUrlChanged(newUrl)
             }
         )
     }
@@ -226,6 +233,14 @@ fun YouTubeWebScreen(
                         addJavascriptInterface(bridge, VotWebBridge.INTERFACE_NAME)
 
                         webViewClient = object : WebViewClient() {
+                            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                val url = request?.url?.toString().orEmpty()
+                                if (isAdUrl(url)) {
+                                    return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                                }
+                                return super.shouldInterceptRequest(view, request)
+                            }
+
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val url = request?.url?.toString().orEmpty()
                                 if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -244,6 +259,10 @@ fun YouTubeWebScreen(
                                 isWebLoading = false
                                 view?.evaluateJavascript(VotWebBridge.INJECTION_SCRIPT, null)
                                 view?.evaluateJavascript("window.setOriginalVolume($originalVolume);", null)
+                                if (startPositionMs > 0L) {
+                                    val startSec = startPositionMs / 1000L
+                                    view?.evaluateJavascript("if (window.__vot_setInitialPosition) window.__vot_setInitialPosition($startSec);", null)
+                                }
                             }
                         }
 
@@ -266,6 +285,13 @@ fun YouTubeWebScreen(
 
                         loadUrl(videoUrl)
                         webViewRef = this
+                    }
+                },
+                update = { webView ->
+                    val currentId = com.vot.player.data.youtube.YouTubeStreamExtractor.extractVideoId(webView.url.orEmpty())
+                    val targetId = com.vot.player.data.youtube.YouTubeStreamExtractor.extractVideoId(videoUrl)
+                    if (targetId != null && targetId != currentId) {
+                        webView.loadUrl(videoUrl)
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -483,4 +509,15 @@ fun YouTubeWebScreen(
             }
         }
     }
+}
+
+private fun isAdUrl(url: String): Boolean {
+    return url.contains("doubleclick.net") ||
+           url.contains("googleads.g.doubleclick.net") ||
+           url.contains("pagead2.googlesyndication.com") ||
+           url.contains("youtube.com/pagead/") ||
+           url.contains("youtube.com/api/stats/ads") ||
+           url.contains("youtube.com/get_midroll_info") ||
+           url.contains("youtube.com/ptracking") ||
+           url.contains("adservice.google.")
 }

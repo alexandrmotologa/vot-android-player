@@ -102,10 +102,18 @@ class WatchHistoryDatabase private constructor(context: Context) :
 
     suspend fun updatePosition(videoId: String, positionMs: Long, durationMs: Long) = withContext(Dispatchers.IO) {
         val db = writableDatabase
+        val existing = getHistoryItem(videoId)
+        // Guard against wiping out existing progress if user quickly enters and exits (< 3s)
+        val finalPos = if (positionMs < 3_000L && (existing?.lastPositionMs ?: 0L) > 10_000L) {
+            existing?.lastPositionMs ?: positionMs
+        } else {
+            positionMs
+        }
+        val finalDur = if (durationMs > 0L) durationMs else (existing?.durationMs ?: 0L)
         val values = ContentValues().apply {
-            put(COL_POSITION, positionMs)
-            if (durationMs > 0) {
-                put(COL_DURATION, durationMs)
+            put(COL_POSITION, finalPos)
+            if (finalDur > 0) {
+                put(COL_DURATION, finalDur)
             }
             put(COL_UPDATED_AT, System.currentTimeMillis())
         }

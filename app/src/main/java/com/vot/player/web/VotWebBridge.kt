@@ -12,7 +12,8 @@ class VotWebBridge(
     private val onRateChange: (rate: Float) -> Unit = {},
     private val onScreenTap: () -> Unit = {},
     private val onFullscreenToggle: (Boolean) -> Unit = {},
-    private val onCaptionsReceived: ((String) -> Unit)? = null
+    private val onCaptionsReceived: ((String) -> Unit)? = null,
+    private val onUrlChanged: ((String) -> Unit)? = null
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -230,6 +231,79 @@ class VotWebBridge(
                     } catch(e) {}
                 }
 
+                // Active ad blocking & skipping for mobile YouTube
+                function skipAndBlockAds() {
+                    try {
+                        const skipBtns = document.querySelectorAll(
+                            '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button.ytp-ad-skip-button-slot, [class*="skip-button"], .ytm-skip-ad-button'
+                        );
+                        skipBtns.forEach(function(b) {
+                            try { b.click(); } catch(e) {}
+                        });
+
+                        const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        const isAd = (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')))
+                            || !!document.querySelector('.ad-showing, .ad-interrupting, .video-ads, .ytp-ad-player-overlay');
+
+                        if (isAd) {
+                            if (player && typeof player.skipAd === 'function') {
+                                try { player.skipAd(); } catch(e) {}
+                            }
+                            const video = document.querySelector('video');
+                            if (video) {
+                                video.muted = true;
+                                if (isFinite(video.duration) && video.duration > 0) {
+                                    video.currentTime = Math.max(0, video.duration - 0.05);
+                                }
+                                video.playbackRate = 16.0;
+                            }
+                        }
+
+                        const adSelectors = [
+                            'ytm-promoted-sparkles-web-renderer',
+                            'ytm-companion-ad-renderer',
+                            'ytm-ad-slot-renderer',
+                            '.ad-container',
+                            '.video-ads',
+                            '.ytp-ad-overlay-container',
+                            'ytm-mealbar-promo-renderer',
+                            'ytm-promoted-video-renderer',
+                            '.sparkles-light-cta',
+                            '.standalone-collection-badge-renderer-icon'
+                        ];
+                        adSelectors.forEach(function(sel) {
+                            document.querySelectorAll(sel).forEach(function(el) {
+                                el.style.display = 'none';
+                            });
+                        });
+                    } catch(e) {}
+                }
+
+                // SPA URL Change detection
+                let lastKnownHref = window.location.href;
+                function checkUrlChange() {
+                    const curHref = window.location.href;
+                    if (curHref !== lastKnownHref) {
+                        lastKnownHref = curHref;
+                        captionsFetched = false;
+                        if (window.VotAndroidBridge && typeof window.VotAndroidBridge.onUrlChanged === 'function') {
+                            window.VotAndroidBridge.onUrlChanged(curHref);
+                        }
+                    }
+                }
+                window.addEventListener('yt-navigate-finish', checkUrlChange);
+                window.addEventListener('popstate', checkUrlChange);
+                const _origPush = history.pushState;
+                history.pushState = function() {
+                    _origPush.apply(this, arguments);
+                    checkUrlChange();
+                };
+                const _origReplace = history.replaceState;
+                history.replaceState = function() {
+                    _origReplace.apply(this, arguments);
+                    checkUrlChange();
+                };
+
                 setInterval(function() {
                     const v = document.querySelector('video');
                     if (v) {
@@ -239,7 +313,9 @@ class VotWebBridge(
                         }
                     }
                     checkAndFetchCaptions();
-                }, 500);
+                    checkUrlChange();
+                    skipAndBlockAds();
+                }, 300);
 
                 document.addEventListener('click', function(e) {
                     const target = e.target;
@@ -268,6 +344,8 @@ class VotWebBridge(
                             window.VotAndroidBridge.onUserTap();
                         }
                     }
+                    setTimeout(checkUrlChange, 200);
+                    setTimeout(skipAndBlockAds, 100);
                 }, true);
 
                 document.addEventListener('fullscreenchange', function() {
@@ -286,6 +364,21 @@ class VotWebBridge(
                     if (video) {
                         applyTargetVolume(video);
                     }
+                };
+
+                window.__vot_setInitialPosition = function(sec) {
+                    if (sec <= 0) return;
+                    let attempts = 0;
+                    const interval = setInterval(function() {
+                        attempts++;
+                        const video = document.querySelector('video');
+                        if (video && video.readyState >= 1) {
+                            window.__vot_seekTo(sec);
+                            clearInterval(interval);
+                        } else if (attempts > 25) {
+                            clearInterval(interval);
+                        }
+                    }, 250);
                 };
             })();
         """.trimIndent()
@@ -329,5 +422,10 @@ class VotWebBridge(
     @JavascriptInterface
     fun onCaptionsLoaded(rawJson: String) {
         mainHandler.post { onCaptionsReceived?.invoke(rawJson) }
+    }
+
+    @JavascriptInterface
+    fun onUrlChanged(newUrl: String) {
+        mainHandler.post { onUrlChanged?.invoke(newUrl) }
     }
 }
