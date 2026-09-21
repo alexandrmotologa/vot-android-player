@@ -9,7 +9,7 @@ Native, ad-free Android video player that brings automated neural **Voice-Over T
 ### 1. English to Russian Neural Voiceover
 - **Real-Time Synchronized Audio Dubbing**: Plays English video streams alongside neural Russian voiceover tracks with automatic clock drift correction and volume ducking.
 - **Two Distinct Voice Technologies**:
-  - **Standard Voices**: High-stability neural synthesis with selectable voice genders (Male, Female, Auto) and voice actors (**Filipp**, **Ermil**, **Alena**, **Oksana**). Reliable for all video lengths.
+  - **Standard Voices**: High-stability neural synthesis with selectable voice genders (Male, Female, Auto) and voice actors (**Filipp**, **Ermil**, **Madirus**, **Alena**, **Oksana**, **Jane**). Reliable for all video lengths.
   - **Live Voices**: Next-generation neural synthesis with realistic human-like pacing, adaptive emotional inflection, and contextual pause placement.
 - **Audio Mixing & Ducking**: Independent volume sliders for the original speaker audio (0–100%) and the translated voiceover (0–100%), with one-tap presets for voiceover-focused listening or original audio focus.
 
@@ -38,7 +38,7 @@ Configure how and when voiceover translation initiates for every video:
   - **Export Video (MP4)**: Packages the high-resolution video stream and the Russian translated audio track into a single MP4 file saved to `Downloads/VOT`.
   - **Export Audio (MP3)**: Extracts and saves the voiceover track as a standalone MP3 file in `Music/VOT` for offline listening.
 - **Podcast & Audio-Only Mode**: Shuts off the video decoder to minimize battery and mobile data usage while keeping background audio and notification controls alive.
-- **Watch History & Resume**: SQLite database stores watch progress, resume timestamps, and custom volume levels for every video.
+- **Watch History & Resume**: Native SQLite database stores watch progress, resume timestamps, and custom volume levels for every video.
 - **In-App Auto Updater**: Automatically checks GitHub releases for new versions and downloads APK updates directly.
 - **Share-to-Play**: Open links directly from the YouTube app, Twitter/X, Reddit, TikTok, or browser via Android's native share sheet, or via clipboard auto-detection.
 
@@ -49,7 +49,7 @@ Configure how and when voiceover translation initiates for every video:
 ```
 com.vot.player/
 ├── data/
-│   ├── db/              # Room / SQLite WatchHistoryDatabase & DAO
+│   ├── db/              # SQLiteOpenHelper WatchHistoryDatabase (zero-dependency native SQLite)
 │   ├── extractor/       # MultiPlatformExtractor (YouTube, Twitch, TikTok, direct URLs)
 │   ├── model/           # Data models (UniversalVideoInfo, SubtitleCue, VoiceType)
 │   ├── pref/            # PlayerPreferences (TranslationTriggerMode, PlayerMode, etc.)
@@ -72,7 +72,7 @@ com.vot.player/
 Requests to Yandex VOT servers require binary Protocol Buffers and custom request signatures:
 - **Binary Protobuf**: Encodes video URL, target language, voice actor choices, and translation session flags.
 - **HMAC-SHA256 Signing**: All outgoing requests are cryptographically signed using `Vtrans-Signature` and token headers.
-- **Proxy Rotation**: Automatically fails over between resilient Cloudflare worker proxies (`vot-worker.eu.cc`, `vot-worker.vtrans.eu.cc`) when upstream rate limits or network hiccups occur.
+- **Proxy Rotation**: Automatically fails over between resilient Cloudflare worker proxies (`vot-worker.vtrans.eu.cc`, `vot-worker.eu.cc`) when upstream rate limits or network hiccups occur.
 
 ---
 
@@ -80,7 +80,7 @@ Requests to Yandex VOT servers require binary Protocol Buffers and custom reques
 
 - **Android Version**: Android 8.0 (API level 26) or higher
 - **Build Target**: Android SDK 35 (compileSdk 35, targetSdk 35)
-- **JDK**: Java 17
+- **JDK**: Java 17 or Java 21 (configured for JVM target 21)
 - **Gradle**: Gradle 8.12 (included via `./gradlew`)
 
 ---
