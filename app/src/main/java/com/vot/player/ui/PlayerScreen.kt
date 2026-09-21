@@ -86,6 +86,7 @@ fun PlayerScreen(
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
     hasRussianSubtitles: Boolean = true,
+    hasRomanianSubtitles: Boolean = true,
     hasEnglishSubtitles: Boolean = true,
     isCustomVoiceSupported: Boolean = true,
     modifier: Modifier = Modifier
@@ -102,10 +103,12 @@ fun PlayerScreen(
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
     val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
     val managerHasRussianSubtitles by playerManager.hasRussianSubtitles.collectAsState()
+    val managerHasRomanianSubtitles by playerManager.hasRomanianSubtitles.collectAsState()
     val managerHasEnglishSubtitles by playerManager.hasEnglishSubtitles.collectAsState()
     val effectiveHasRussian = hasRussianSubtitles || managerHasRussianSubtitles
+    val effectiveHasRomanian = hasRomanianSubtitles || managerHasRomanianSubtitles
     val effectiveHasEnglish = hasEnglishSubtitles || managerHasEnglishSubtitles
-    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasEnglish
+    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasRomanian || effectiveHasEnglish
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -803,6 +806,7 @@ fun PlayerScreen(
                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                 hasSubtitles = effectiveHasSubtitles,
                 hasRussianSubtitles = effectiveHasRussian,
+                hasRomanianSubtitles = effectiveHasRomanian,
                 hasEnglishSubtitles = effectiveHasEnglish,
                 isCustomVoiceSupported = isCustomVoiceSupported,
                 onDismiss = { showSettingsDialog = false }

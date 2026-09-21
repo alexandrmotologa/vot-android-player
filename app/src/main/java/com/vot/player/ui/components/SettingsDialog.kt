@@ -53,6 +53,7 @@ fun SettingsDialog(
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
     hasRussianSubtitles: Boolean = true,
+    hasRomanianSubtitles: Boolean = true,
     hasEnglishSubtitles: Boolean = true,
     isCustomVoiceSupported: Boolean = true,
     onExportVideoClick: () -> Unit = {},
@@ -222,7 +223,7 @@ fun SettingsDialog(
 
                 // Subtitles
                 Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
-                val anySubtitlesAvailable = hasSubtitles || hasRussianSubtitles || hasEnglishSubtitles
+                val anySubtitlesAvailable = hasSubtitles || hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
                 if (!anySubtitlesAvailable) {
                     Text(
                         text = "Notice: Subtitles are not available for this video",
@@ -240,6 +241,7 @@ fun SettingsDialog(
                         val isEnabled = when (sub) {
                             SubtitlesMode.OFF -> true
                             SubtitlesMode.RUSSIAN -> hasRussianSubtitles || hasSubtitles
+                            SubtitlesMode.ROMANIAN -> hasRomanianSubtitles || hasSubtitles
                             SubtitlesMode.ENGLISH -> hasEnglishSubtitles || hasSubtitles
                         }
                         FilterChip(

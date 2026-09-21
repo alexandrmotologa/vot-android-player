@@ -14,6 +14,7 @@ class VotWebBridge(
     private val onFullscreenToggle: (Boolean) -> Unit = {},
     private val onCaptionsReceived: ((String) -> Unit)? = null,
     private val onDualCaptionsReceived: ((ruJson: String, enJson: String) -> Unit)? = null,
+    private val onMultiCaptionsReceived: ((ruJson: String, roJson: String, baseJson: String) -> Unit)? = null,
     private val onUrlChanged: ((String) -> Unit)? = null
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -330,33 +331,33 @@ class VotWebBridge(
                         if (tracklist.length > 0) {
                             captionsFetched = true;
                             const ruTrack = tracklist.find(function(t) { return t.languageCode === 'ru' || (t.vssId && t.vssId.indexOf('.ru') !== -1); });
+                            const roTrack = tracklist.find(function(t) { return t.languageCode === 'ro' || (t.vssId && t.vssId.indexOf('.ro') !== -1); });
                             const enTrack = tracklist.find(function(t) { return t.languageCode === 'en' || (t.vssId && t.vssId.indexOf('.en') !== -1); }) || tracklist[0];
 
-                            let ruUrl = '';
-                            if (ruTrack && ruTrack.baseUrl) {
-                                ruUrl = ruTrack.baseUrl;
-                            } else if (enTrack && enTrack.baseUrl) {
-                                ruUrl = enTrack.baseUrl + '&tlang=ru';
-                            }
-                            if (ruUrl && ruUrl.indexOf('fmt=') === -1) ruUrl += '&fmt=json3';
+                            // Direct tracks only - DO NOT append tlang to avoid YouTube 429
+                            let ruUrl = (ruTrack && ruTrack.baseUrl) ? ruTrack.baseUrl : '';
+                            let roUrl = (roTrack && roTrack.baseUrl) ? roTrack.baseUrl : '';
+                            let enUrl = (enTrack && enTrack.baseUrl) ? enTrack.baseUrl : '';
 
-                            let enUrl = '';
-                            if (enTrack && enTrack.baseUrl) {
-                                enUrl = enTrack.baseUrl;
-                                if (enUrl.indexOf('fmt=') === -1) enUrl += '&fmt=json3';
-                            }
+                            if (ruUrl && ruUrl.indexOf('fmt=') === -1) ruUrl += '&fmt=json3';
+                            if (roUrl && roUrl.indexOf('fmt=') === -1) roUrl += '&fmt=json3';
+                            if (enUrl && enUrl.indexOf('fmt=') === -1) enUrl += '&fmt=json3';
 
                             const pRu = ruUrl ? fetch(ruUrl).then(function(r) { return r.text(); }).catch(function() { return ''; }) : Promise.resolve('');
+                            const pRo = roUrl ? fetch(roUrl).then(function(r) { return r.text(); }).catch(function() { return ''; }) : Promise.resolve('');
                             const pEn = enUrl ? fetch(enUrl).then(function(r) { return r.text(); }).catch(function() { return ''; }) : Promise.resolve('');
 
-                            Promise.all([pRu, pEn]).then(function(results) {
+                            Promise.all([pRu, pRo, pEn]).then(function(results) {
                                 const ruTxt = results[0] || '';
-                                const enTxt = results[1] || '';
+                                const roTxt = results[1] || '';
+                                const enTxt = results[2] || '';
                                 if (window.VotAndroidBridge) {
-                                    if (typeof window.VotAndroidBridge.onDualCaptionsLoaded === 'function') {
+                                    if (typeof window.VotAndroidBridge.onMultiCaptionsLoaded === 'function') {
+                                        window.VotAndroidBridge.onMultiCaptionsLoaded(ruTxt, roTxt, enTxt);
+                                    } else if (typeof window.VotAndroidBridge.onDualCaptionsLoaded === 'function') {
                                         window.VotAndroidBridge.onDualCaptionsLoaded(ruTxt, enTxt);
                                     } else if (window.VotAndroidBridge.onCaptionsLoaded) {
-                                        window.VotAndroidBridge.onCaptionsLoaded(ruTxt || enTxt);
+                                        window.VotAndroidBridge.onCaptionsLoaded(ruTxt || roTxt || enTxt);
                                     }
                                 }
                             }).catch(function() {});
@@ -592,6 +593,21 @@ class VotWebBridge(
                 onCaptionsReceived?.invoke(ruJson)
             } else if (enJson.isNotBlank()) {
                 onCaptionsReceived?.invoke(enJson)
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun onMultiCaptionsLoaded(ruJson: String, roJson: String, baseJson: String) {
+        mainHandler.post {
+            onMultiCaptionsReceived?.invoke(ruJson, roJson, baseJson)
+            onDualCaptionsReceived?.invoke(ruJson, baseJson)
+            if (ruJson.isNotBlank()) {
+                onCaptionsReceived?.invoke(ruJson)
+            } else if (roJson.isNotBlank()) {
+                onCaptionsReceived?.invoke(roJson)
+            } else if (baseJson.isNotBlank()) {
+                onCaptionsReceived?.invoke(baseJson)
             }
         }
     }

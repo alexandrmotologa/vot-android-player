@@ -71,6 +71,7 @@ fun YouTubeWebScreen(
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
     hasRussianSubtitles: Boolean = true,
+    hasRomanianSubtitles: Boolean = true,
     hasEnglishSubtitles: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -84,10 +85,12 @@ fun YouTubeWebScreen(
     val voiceoverVolume by playerManager.voiceoverVolume.collectAsState()
     val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
     val managerHasRussianSubtitles by playerManager.hasRussianSubtitles.collectAsState()
+    val managerHasRomanianSubtitles by playerManager.hasRomanianSubtitles.collectAsState()
     val managerHasEnglishSubtitles by playerManager.hasEnglishSubtitles.collectAsState()
     val effectiveHasRussian = hasRussianSubtitles || managerHasRussianSubtitles
+    val effectiveHasRomanian = hasRomanianSubtitles || managerHasRomanianSubtitles
     val effectiveHasEnglish = hasEnglishSubtitles || managerHasEnglishSubtitles
-    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasEnglish
+    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasRomanian || effectiveHasEnglish
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -137,6 +140,33 @@ fun YouTubeWebScreen(
                     val ruCues = if (ruJson.isNotBlank()) votApiClient.parseSubtitles(ruJson) else emptyList()
                     val enCues = if (enJson.isNotBlank()) votApiClient.parseSubtitles(enJson) else emptyList()
                     playerManager.setDualSubtitles(ruCues, enCues)
+                }
+            },
+            onMultiCaptionsReceived = { ruJson, roJson, baseJson ->
+                coroutineScope.launch {
+                    var ruCues = if (ruJson.isNotBlank()) votApiClient.parseSubtitles(ruJson) else emptyList()
+                    var roCues = if (roJson.isNotBlank()) votApiClient.parseSubtitles(roJson) else emptyList()
+                    var baseCues = if (baseJson.isNotBlank()) votApiClient.parseSubtitles(baseJson) else emptyList()
+
+                    val source = when {
+                        baseCues.isNotEmpty() -> baseCues
+                        ruCues.isNotEmpty() -> ruCues
+                        roCues.isNotEmpty() -> roCues
+                        else -> emptyList()
+                    }
+
+                    if (source.isNotEmpty()) {
+                        if (ruCues.isEmpty()) {
+                            ruCues = votApiClient.translateCues(source, "ru")
+                        }
+                        if (roCues.isEmpty()) {
+                            roCues = votApiClient.translateCues(source, "ro")
+                        }
+                        if (baseCues.isEmpty()) {
+                            baseCues = votApiClient.translateCues(source, "en")
+                        }
+                    }
+                    playerManager.setMultiSubtitles(ruCues, roCues, baseCues)
                 }
             },
             onUrlChanged = { newUrl ->
@@ -564,7 +594,7 @@ fun YouTubeWebScreen(
 
                     // Subtitles Controls
                     Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
-                    val anySubtitlesAvailable = effectiveHasSubtitles || effectiveHasRussian || effectiveHasEnglish
+                    val anySubtitlesAvailable = effectiveHasSubtitles || effectiveHasRussian || effectiveHasRomanian || effectiveHasEnglish
                     if (!anySubtitlesAvailable) {
                         Text(
                             text = "Notice: Subtitles are not available for this video",
@@ -582,6 +612,7 @@ fun YouTubeWebScreen(
                             val isEnabled = when (sub) {
                                 SubtitlesMode.OFF -> true
                                 SubtitlesMode.RUSSIAN -> effectiveHasRussian || effectiveHasSubtitles
+                                SubtitlesMode.ROMANIAN -> effectiveHasRomanian || effectiveHasSubtitles
                                 SubtitlesMode.ENGLISH -> effectiveHasEnglish || effectiveHasSubtitles
                             }
                             FilterChip(

@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var isLiveVoiceAvailable by mutableStateOf(true)
     private var hasSubtitles by mutableStateOf(false)
     private var hasRussianSubtitles by mutableStateOf(false)
+    private var hasRomanianSubtitles by mutableStateOf(false)
     private var hasEnglishSubtitles by mutableStateOf(false)
     private var isCustomVoiceSupported by mutableStateOf(false)
     private var translationJob: Job? = null
@@ -151,7 +152,14 @@ class MainActivity : ComponentActivity() {
                 var showUpdateDialog by remember { mutableStateOf(false) }
                 var updateDownloadState by remember { mutableStateOf<UpdateDownloadState>(UpdateDownloadState.Idle) }
                 val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
-                val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles
+                val managerHasRussianSubtitles by playerManager.hasRussianSubtitles.collectAsState()
+                val managerHasRomanianSubtitles by playerManager.hasRomanianSubtitles.collectAsState()
+                val managerHasEnglishSubtitles by playerManager.hasEnglishSubtitles.collectAsState()
+
+                val effectiveHasRussian = hasRussianSubtitles || managerHasRussianSubtitles
+                val effectiveHasRomanian = hasRomanianSubtitles || managerHasRomanianSubtitles
+                val effectiveHasEnglish = hasEnglishSubtitles || managerHasEnglishSubtitles
+                val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles || effectiveHasRussian || effectiveHasRomanian || effectiveHasEnglish
 
                 LaunchedEffect(exportState) {
                     if (exportState !is ExportState.Idle) {
@@ -219,8 +227,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                                 hasSubtitles = effectiveHasSubtitles,
-                                hasRussianSubtitles = hasRussianSubtitles,
-                                hasEnglishSubtitles = hasEnglishSubtitles,
+                                hasRussianSubtitles = effectiveHasRussian,
+                                hasRomanianSubtitles = effectiveHasRomanian,
+                                hasEnglishSubtitles = effectiveHasEnglish,
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -263,8 +272,9 @@ class MainActivity : ComponentActivity() {
                                     activeVideoUrl?.let { openNativePlayer(it, playerManager.currentPositionMs.value) }
                                 },
                                 hasSubtitles = effectiveHasSubtitles,
-                                hasRussianSubtitles = hasRussianSubtitles,
-                                hasEnglishSubtitles = hasEnglishSubtitles,
+                                hasRussianSubtitles = effectiveHasRussian,
+                                hasRomanianSubtitles = effectiveHasRomanian,
+                                hasEnglishSubtitles = effectiveHasEnglish,
                                 isSponsorBlockEnabled = isSponsorBlockEnabled,
                                 onSponsorBlockChange = { enabled ->
                                     isSponsorBlockEnabled = enabled
@@ -428,6 +438,9 @@ class MainActivity : ComponentActivity() {
                             },
                             isLiveVoiceAvailable = isLiveVoiceAvailable,
                             hasSubtitles = effectiveHasSubtitles,
+                            hasRussianSubtitles = effectiveHasRussian,
+                            hasRomanianSubtitles = effectiveHasRomanian,
+                            hasEnglishSubtitles = effectiveHasEnglish,
                             isCustomVoiceSupported = isCustomVoiceSupported,
                             onDismiss = { showSettingsFromHome = false }
                         )
@@ -508,9 +521,9 @@ class MainActivity : ComponentActivity() {
     private fun openYouTubeWebView(rawUrl: String, requestedStartPositionMs: Long = 0L) {
         translationJob?.cancel()
         playerManager.stopVideo()
-        playerManager.setVoiceoverAudio(null, startPlaying = false)
-        playerManager.setDualSubtitles(emptyList(), emptyList())
+        playerManager.setMultiSubtitles(emptyList(), emptyList(), emptyList())
         hasRussianSubtitles = false
+        hasRomanianSubtitles = false
         hasEnglishSubtitles = false
         hasSubtitles = false
         currentTranslatedAudioUrl = null
@@ -557,7 +570,7 @@ class MainActivity : ComponentActivity() {
             }
 
             val subtitlesDeferred = async {
-                votApiClient.getDualSubtitles(votUrl)
+                votApiClient.getMultiSubtitles(votUrl)
             }
 
             val votResult = votApiClient.translateVideo(
@@ -569,14 +582,16 @@ class MainActivity : ComponentActivity() {
                 onProgress = { statusMessage = it }
             )
 
-            val dualSubsResult = subtitlesDeferred.await()
-            val dualSubs = dualSubsResult.getOrNull()
-            val ruCues = dualSubs?.russianCues ?: emptyList()
-            val enCues = dualSubs?.englishCues ?: emptyList()
+            val multiSubsResult = subtitlesDeferred.await()
+            val multiSubs = multiSubsResult.getOrNull()
+            val ruCues = multiSubs?.russianCues ?: emptyList()
+            val roCues = multiSubs?.romanianCues ?: emptyList()
+            val enCues = multiSubs?.englishCues ?: emptyList()
             hasRussianSubtitles = ruCues.isNotEmpty()
+            hasRomanianSubtitles = roCues.isNotEmpty()
             hasEnglishSubtitles = enCues.isNotEmpty()
-            hasSubtitles = hasRussianSubtitles || hasEnglishSubtitles
-            playerManager.setDualSubtitles(ruCues, enCues)
+            hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
+            playerManager.setMultiSubtitles(ruCues, roCues, enCues)
             playerManager.setSubtitlesMode(selectedSubtitles)
 
             val audioUrl = votResult.getOrNull()?.url
@@ -638,9 +653,9 @@ class MainActivity : ComponentActivity() {
         activeVideoUrl = rawUrl
         isLoading = true
         statusMessage = "Resolving video stream..."
-        playerManager.setVoiceoverAudio(null, startPlaying = false)
-        playerManager.setDualSubtitles(emptyList(), emptyList())
+        playerManager.setMultiSubtitles(emptyList(), emptyList(), emptyList())
         hasRussianSubtitles = false
+        hasRomanianSubtitles = false
         hasEnglishSubtitles = false
         hasSubtitles = false
         currentTranslatedAudioUrl = null
@@ -689,7 +704,7 @@ class MainActivity : ComponentActivity() {
                     val votUrl = "https://www.youtube.com/watch?v=$videoId"
 
                     val subtitlesDeferred = async {
-                        votApiClient.getDualSubtitles(votUrl)
+                        votApiClient.getMultiSubtitles(votUrl)
                     }
 
                     val votResult = votApiClient.translateVideo(
@@ -701,14 +716,16 @@ class MainActivity : ComponentActivity() {
                         onProgress = { statusMessage = it }
                     )
 
-                    val dualSubsResult = subtitlesDeferred.await()
-                    val dualSubs = dualSubsResult.getOrNull()
-                    val ruCues = dualSubs?.russianCues ?: emptyList()
-                    val enCues = dualSubs?.englishCues ?: emptyList()
+                    val multiSubsResult = subtitlesDeferred.await()
+                    val multiSubs = multiSubsResult.getOrNull()
+                    val ruCues = multiSubs?.russianCues ?: emptyList()
+                    val roCues = multiSubs?.romanianCues ?: emptyList()
+                    val enCues = multiSubs?.englishCues ?: emptyList()
                     hasRussianSubtitles = ruCues.isNotEmpty()
+                    hasRomanianSubtitles = roCues.isNotEmpty()
                     hasEnglishSubtitles = enCues.isNotEmpty()
-                    hasSubtitles = hasRussianSubtitles || hasEnglishSubtitles
-                    playerManager.setDualSubtitles(ruCues, enCues)
+                    hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
+                    playerManager.setMultiSubtitles(ruCues, roCues, enCues)
                     playerManager.setSubtitlesMode(selectedSubtitles)
 
                     val resumePositionMs = if (requestedStartPositionMs > 0L) {
@@ -816,7 +833,7 @@ class MainActivity : ComponentActivity() {
             }
 
             val subtitlesDeferred = async {
-                votApiClient.getDualSubtitles(votUrl)
+                votApiClient.getMultiSubtitles(votUrl)
             }
 
             val votResult = votApiClient.translateVideo(
@@ -828,14 +845,16 @@ class MainActivity : ComponentActivity() {
                 onProgress = { statusMessage = it }
             )
 
-            val dualSubsResult = subtitlesDeferred.await()
-            val dualSubs = dualSubsResult.getOrNull()
-            val ruCues = dualSubs?.russianCues ?: emptyList()
-            val enCues = dualSubs?.englishCues ?: emptyList()
+            val multiSubsResult = subtitlesDeferred.await()
+            val multiSubs = multiSubsResult.getOrNull()
+            val ruCues = multiSubs?.russianCues ?: emptyList()
+            val roCues = multiSubs?.romanianCues ?: emptyList()
+            val enCues = multiSubs?.englishCues ?: emptyList()
             hasRussianSubtitles = ruCues.isNotEmpty()
+            hasRomanianSubtitles = roCues.isNotEmpty()
             hasEnglishSubtitles = enCues.isNotEmpty()
-            hasSubtitles = hasRussianSubtitles || hasEnglishSubtitles
-            playerManager.setDualSubtitles(ruCues, enCues)
+            hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
+            playerManager.setMultiSubtitles(ruCues, roCues, enCues)
             playerManager.setSubtitlesMode(selectedSubtitles)
 
             val translatedAudioUrl = votResult.getOrNull()?.url

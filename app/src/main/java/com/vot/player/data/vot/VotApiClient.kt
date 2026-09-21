@@ -24,6 +24,14 @@ import java.util.regex.Pattern
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
+import okhttp3.FormBody
+
+data class MultiSubtitles(
+    val russianCues: List<SubtitleCue> = emptyList(),
+    val romanianCues: List<SubtitleCue> = emptyList(),
+    val englishCues: List<SubtitleCue> = emptyList()
+)
+
 data class DualSubtitles(
     val russianCues: List<SubtitleCue> = emptyList(),
     val englishCues: List<SubtitleCue> = emptyList()
@@ -238,13 +246,14 @@ class VotApiClient(
         }
     }
 
-    suspend fun getDualSubtitles(
+    suspend fun getMultiSubtitles(
         videoUrl: String
-    ): Result<DualSubtitles> = withContext(Dispatchers.IO) {
+    ): Result<MultiSubtitles> = withContext(Dispatchers.IO) {
         var ruCues: List<SubtitleCue> = emptyList()
+        var roCues: List<SubtitleCue> = emptyList()
         var enCues: List<SubtitleCue> = emptyList()
 
-        // 1. Try Yandex subtitles API
+        // 1. Try Yandex subtitles API via VOT worker
         try {
             val session = getOrCreateSession()
             val path = "/video-subtitles/get-subtitles"
@@ -282,8 +291,10 @@ class VotApiClient(
                     val subtitleEntries = VotProtobuf.decodeSubtitlesResponse(responseBytes)
                     val ruEntry = subtitleEntries.firstOrNull { it.translatedLanguage == "ru" && it.translatedUrl.isNotBlank() }
                         ?: subtitleEntries.firstOrNull { it.language == "ru" && it.url.isNotBlank() }
+                    val roEntry = subtitleEntries.firstOrNull { it.translatedLanguage == "ro" && it.translatedUrl.isNotBlank() }
+                        ?: subtitleEntries.firstOrNull { it.language == "ro" && it.url.isNotBlank() }
                     val enEntry = subtitleEntries.firstOrNull { it.language == "en" && it.url.isNotBlank() }
-                        ?: subtitleEntries.firstOrNull { it.url.isNotBlank() && it != ruEntry }
+                        ?: subtitleEntries.firstOrNull { it.url.isNotBlank() && it != ruEntry && it != roEntry }
 
                     if (ruEntry != null) {
                         val subUrl = ruEntry.translatedUrl.ifBlank { ruEntry.url }
@@ -291,6 +302,15 @@ class VotApiClient(
                             val subResp = okHttpClient.newCall(Request.Builder().url(subUrl).get().build()).execute()
                             if (subResp.isSuccessful) {
                                 ruCues = parseSubtitles(subResp.body?.string().orEmpty())
+                            }
+                        }
+                    }
+                    if (roEntry != null) {
+                        val subUrl = roEntry.translatedUrl.ifBlank { roEntry.url }
+                        if (subUrl.isNotBlank()) {
+                            val subResp = okHttpClient.newCall(Request.Builder().url(subUrl).get().build()).execute()
+                            if (subResp.isSuccessful) {
+                                roCues = parseSubtitles(subResp.body?.string().orEmpty())
                             }
                         }
                     }
@@ -307,47 +327,68 @@ class VotApiClient(
             }
         } catch (_: Exception) {}
 
-        // 2. Fallback: YouTube direct captions for missing tracks
-        if (ruCues.isEmpty() || enCues.isEmpty()) {
+        // 2. Fallback: YouTube direct caption tracks (WITHOUT &tlang to prevent HTTP 429 rate limit)
+        if (ruCues.isEmpty() || roCues.isEmpty() || enCues.isEmpty()) {
             try {
-                if (enCues.isEmpty()) {
-                    val fallbackEn = fetchYouTubeCaptionsFallback(videoUrl, TargetLanguage.ENGLISH)
-                    if (fallbackEn.isNotEmpty()) {
-                        enCues = fallbackEn
-                    }
+                val directTracks = fetchYouTubeDirectCaptionTracks(videoUrl)
+                if (ruCues.isEmpty() && directTracks.containsKey("ru")) {
+                    ruCues = directTracks["ru"] ?: emptyList()
                 }
-                if (ruCues.isEmpty()) {
-                    val fallbackRu = fetchYouTubeCaptionsFallback(videoUrl, TargetLanguage.RUSSIAN)
-                    if (fallbackRu.isNotEmpty()) {
-                        ruCues = fallbackRu
-                    }
+                if (roCues.isEmpty() && directTracks.containsKey("ro")) {
+                    roCues = directTracks["ro"] ?: emptyList()
+                }
+                if (enCues.isEmpty() && directTracks.containsKey("en")) {
+                    enCues = directTracks["en"] ?: emptyList()
+                }
+                if (enCues.isEmpty() && directTracks.containsKey("base")) {
+                    enCues = directTracks["base"] ?: emptyList()
                 }
             } catch (_: Exception) {}
         }
 
-        // 3. Guaranteed Russian availability: Translate English cues to Russian via GTX batch translator
-        if (ruCues.isEmpty() && enCues.isNotEmpty()) {
-            try {
-                ruCues = translateCues(enCues, "ru")
-            } catch (_: Exception) {}
+        // 3. Guaranteed availability: Translate missing tracks using parallel GTX batch translator
+        val baseCues = when {
+            enCues.isNotEmpty() -> enCues
+            ruCues.isNotEmpty() -> ruCues
+            roCues.isNotEmpty() -> roCues
+            else -> emptyList()
         }
 
-        // 4. If English missing but Russian available, translate Russian cues to English
-        if (enCues.isEmpty() && ruCues.isNotEmpty()) {
-            try {
-                enCues = translateCues(ruCues, "en")
-            } catch (_: Exception) {}
+        if (baseCues.isNotEmpty()) {
+            val needRu = ruCues.isEmpty()
+            val needRo = roCues.isEmpty()
+            val needEn = enCues.isEmpty()
+
+            val ruDeferred = if (needRu) async { translateCues(baseCues, "ru") } else null
+            val roDeferred = if (needRo) async { translateCues(baseCues, "ro") } else null
+            val enDeferred = if (needEn) async { translateCues(baseCues, "en") } else null
+
+            if (ruDeferred != null) ruCues = ruDeferred.await()
+            if (roDeferred != null) roCues = roDeferred.await()
+            if (enDeferred != null) enCues = enDeferred.await()
         }
 
-        Result.success(DualSubtitles(russianCues = ruCues, englishCues = enCues))
+        Result.success(MultiSubtitles(russianCues = ruCues, romanianCues = roCues, englishCues = enCues))
+    }
+
+    suspend fun getDualSubtitles(
+        videoUrl: String
+    ): Result<DualSubtitles> = withContext(Dispatchers.IO) {
+        val multi = getMultiSubtitles(videoUrl).getOrDefault(MultiSubtitles())
+        Result.success(DualSubtitles(russianCues = multi.russianCues, englishCues = multi.englishCues))
     }
 
     suspend fun getSubtitles(
         videoUrl: String,
         targetLang: TargetLanguage = TargetLanguage.RUSSIAN
     ): Result<List<SubtitleCue>> = withContext(Dispatchers.IO) {
-        val dual = getDualSubtitles(videoUrl).getOrDefault(DualSubtitles())
-        val cues = if (targetLang == TargetLanguage.RUSSIAN) dual.russianCues else dual.englishCues
+        val multi = getMultiSubtitles(videoUrl).getOrDefault(MultiSubtitles())
+        val cues = when (targetLang) {
+            TargetLanguage.RUSSIAN -> multi.russianCues
+            TargetLanguage.ROMANIAN -> multi.romanianCues
+            TargetLanguage.ENGLISH -> multi.englishCues
+            else -> multi.russianCues.ifEmpty { multi.romanianCues }.ifEmpty { multi.englishCues }
+        }
         Result.success(cues)
     }
 
@@ -365,15 +406,15 @@ class VotApiClient(
         return null
     }
 
-    private suspend fun fetchYouTubeCaptionsFallback(
-        videoUrl: String,
-        targetLang: TargetLanguage
-    ): List<SubtitleCue> {
-        val videoId = extractVideoId(videoUrl) ?: return emptyList()
-        var rawXmlOrJson = ""
-        var isDirectTargetLang = false
+    private suspend fun fetchYouTubeDirectCaptionTracks(
+        videoUrl: String
+    ): Map<String, List<SubtitleCue>> = withContext(Dispatchers.IO) {
+        val results = mutableMapOf<String, List<SubtitleCue>>()
+        val videoId = extractVideoId(videoUrl) ?: return@withContext results
 
-        // 1. Try YouTube InnerTube ANDROID_VR client (returns signed captionTracks)
+        var captionTracksArray: JSONArray? = null
+
+        // 1. Try YouTube InnerTube ANDROID_VR client (fast, reliable signed captionTracks)
         try {
             val requestJson = JSONObject().apply {
                 put("videoId", videoId)
@@ -385,7 +426,7 @@ class VotApiClient(
                         put("deviceModel", "Quest 3")
                         put("osName", "Android")
                         put("osVersion", "12")
-                        put("hl", targetLang.code)
+                        put("hl", "en")
                         put("gl", "US")
                     })
                 })
@@ -399,125 +440,97 @@ class VotApiClient(
 
             val response = okHttpClient.newCall(request).execute()
             if (response.isSuccessful) {
-                val responseBody = response.body?.string() ?: ""
-                val json = JSONObject(responseBody)
-                val captions = json.optJSONObject("captions")
+                val json = JSONObject(response.body?.string().orEmpty())
+                captionTracksArray = json.optJSONObject("captions")
                     ?.optJSONObject("playerCaptionsTracklistRenderer")
                     ?.optJSONArray("captionTracks")
-
-                if (captions != null && captions.length() > 0) {
-                    var selectedUrl = ""
-                    // Check if direct target language exists
-                    for (i in 0 until captions.length()) {
-                        val track = captions.getJSONObject(i)
-                        val lang = track.optString("languageCode", "")
-                        val vss = track.optString("vssId", "")
-                        if (lang.equals(targetLang.code, ignoreCase = true) || vss.contains(".${targetLang.code}") || vss.contains("a.${targetLang.code}")) {
-                            selectedUrl = track.optString("baseUrl", "")
-                            isDirectTargetLang = true
-                            break
-                        }
-                    }
-                    if (selectedUrl.isEmpty()) {
-                        // Fallback to English track or first track
-                        for (i in 0 until captions.length()) {
-                            val track = captions.getJSONObject(i)
-                            if (track.optString("languageCode", "").equals("en", ignoreCase = true)) {
-                                selectedUrl = track.optString("baseUrl", "")
-                                break
-                            }
-                        }
-                        if (selectedUrl.isEmpty()) {
-                            selectedUrl = captions.getJSONObject(0).optString("baseUrl", "")
-                        }
-                    }
-                    if (selectedUrl.isNotEmpty()) {
-                        var finalUrl = selectedUrl
-                        if (!isDirectTargetLang && !finalUrl.contains("tlang=")) {
-                            finalUrl += "&tlang=${targetLang.code}"
-                        }
-                        if (!finalUrl.contains("fmt=")) {
-                            finalUrl += "&fmt=json3"
-                        }
-                        val subReq = Request.Builder()
-                            .url(finalUrl)
-                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                            .build()
-                        val subResp = okHttpClient.newCall(subReq).execute()
-                        if (subResp.isSuccessful) {
-                            rawXmlOrJson = subResp.body?.string() ?: ""
-                            isDirectTargetLang = true
-                        }
-                    }
-                }
             }
         } catch (_: Exception) {}
 
         // 2. Fallback: Parse watch page HTML for ytInitialPlayerResponse
-        if (rawXmlOrJson.isEmpty()) {
+        if (captionTracksArray == null || captionTracksArray.length() == 0) {
             try {
                 val pageReq = Request.Builder()
                     .url("https://www.youtube.com/watch?v=$videoId")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
-                    .header("Accept-Language", "${targetLang.code},en;q=0.9")
                     .build()
                 val pageResp = okHttpClient.newCall(pageReq).execute()
-                val html = pageResp.body?.string() ?: ""
+                val html = pageResp.body?.string().orEmpty()
                 val p = Pattern.compile("ytInitialPlayerResponse\\s*=\\s*(\\{.+?\\});")
                 val m = p.matcher(html)
                 if (m.find()) {
                     val pJson = JSONObject(m.group(1) ?: "{}")
-                    val capTracks = pJson.optJSONObject("captions")
+                    captionTracksArray = pJson.optJSONObject("captions")
                         ?.optJSONObject("playerCaptionsTracklistRenderer")
                         ?.optJSONArray("captionTracks")
-                    if (capTracks != null && capTracks.length() > 0) {
-                        var chosenUrl = ""
-                        for (i in 0 until capTracks.length()) {
-                            val track = capTracks.getJSONObject(i)
-                            val lang = track.optString("languageCode", "")
-                            if (lang.equals(targetLang.code, ignoreCase = true)) {
-                                chosenUrl = track.optString("baseUrl", "")
-                                isDirectTargetLang = true
-                                break
-                            }
-                        }
-                        if (chosenUrl.isEmpty()) {
-                            chosenUrl = capTracks.getJSONObject(0).optString("baseUrl", "")
-                        }
-                        if (chosenUrl.isNotEmpty()) {
-                            var finalUrl = chosenUrl
-                            if (!isDirectTargetLang && !finalUrl.contains("tlang=")) {
-                                finalUrl += "&tlang=${targetLang.code}"
-                            }
-                            if (!finalUrl.contains("fmt=")) {
-                                finalUrl += "&fmt=json3"
-                            }
-                            val trackReq = Request.Builder()
-                                .url(finalUrl)
-                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                                .build()
-                            val trackResp = okHttpClient.newCall(trackReq).execute()
-                            if (trackResp.isSuccessful) {
-                                rawXmlOrJson = trackResp.body?.string() ?: ""
-                                isDirectTargetLang = true
-                            }
-                        }
-                    }
                 }
             } catch (_: Exception) {}
         }
 
-        if (rawXmlOrJson.isEmpty()) return emptyList()
+        if (captionTracksArray == null || captionTracksArray.length() == 0) return@withContext results
 
-        val parsedCues = parseSubtitles(rawXmlOrJson)
-        if (parsedCues.isEmpty()) return emptyList()
+        var ruUrl = ""
+        var roUrl = ""
+        var enUrl = ""
+        var firstUrl = ""
 
-        if (isDirectTargetLang || targetLang == TargetLanguage.ENGLISH) {
-            return parsedCues
+        for (i in 0 until captionTracksArray.length()) {
+            val track = captionTracksArray.getJSONObject(i)
+            val lang = track.optString("languageCode", "")
+            val vss = track.optString("vssId", "")
+            val bUrl = track.optString("baseUrl", "")
+            if (bUrl.isBlank()) continue
+
+            if (firstUrl.isEmpty()) firstUrl = bUrl
+            if (lang.equals("ru", ignoreCase = true) || vss.contains(".ru")) {
+                if (ruUrl.isEmpty()) ruUrl = bUrl
+            }
+            if (lang.equals("ro", ignoreCase = true) || vss.contains(".ro")) {
+                if (roUrl.isEmpty()) roUrl = bUrl
+            }
+            if (lang.equals("en", ignoreCase = true) || vss.contains(".en")) {
+                if (enUrl.isEmpty()) enUrl = bUrl
+            }
         }
 
-        // Translate cues to Russian or selected target language
-        return translateCues(parsedCues, targetLang.code)
+        fun downloadAndParse(rawUrl: String): List<SubtitleCue> {
+            if (rawUrl.isBlank()) return emptyList()
+            var url = rawUrl
+            if (!url.contains("fmt=")) {
+                url += "&fmt=json3"
+            }
+            return try {
+                val req = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .build()
+                val resp = okHttpClient.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    parseSubtitles(resp.body?.string().orEmpty())
+                } else emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        if (ruUrl.isNotEmpty()) {
+            val cues = downloadAndParse(ruUrl)
+            if (cues.isNotEmpty()) results["ru"] = cues
+        }
+        if (roUrl.isNotEmpty()) {
+            val cues = downloadAndParse(roUrl)
+            if (cues.isNotEmpty()) results["ro"] = cues
+        }
+        if (enUrl.isNotEmpty()) {
+            val cues = downloadAndParse(enUrl)
+            if (cues.isNotEmpty()) results["en"] = cues
+        }
+        if (!results.containsKey("en") && firstUrl.isNotEmpty() && firstUrl != ruUrl && firstUrl != roUrl) {
+            val cues = downloadAndParse(firstUrl)
+            if (cues.isNotEmpty()) results["base"] = cues
+        }
+
+        results
     }
 
     suspend fun translateCues(
@@ -525,22 +538,25 @@ class VotApiClient(
         targetLangCode: String = "ru"
     ): List<SubtitleCue> = coroutineScope {
         if (cues.isEmpty()) return@coroutineScope emptyList()
-        val batchSize = 40
+        val batchSize = 35
         val batches = cues.chunked(batchSize)
 
         val deferreds = batches.map { batch ->
             async(Dispatchers.IO) {
                 val combinedText = batch.joinToString("\n") { it.text.replace("\n", " ").trim() }
                 try {
-                    val encoded = URLEncoder.encode(combinedText, "UTF-8")
-                    val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetLangCode&dt=t&q=$encoded"
+                    val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetLangCode&dt=t"
+                    val formBody = FormBody.Builder()
+                        .add("q", combinedText)
+                        .build()
                     val request = Request.Builder()
                         .url(url)
+                        .post(formBody)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
                         .build()
                     val response = okHttpClient.newCall(request).execute()
                     if (response.isSuccessful) {
-                        val bodyStr = response.body?.string() ?: ""
+                        val bodyStr = response.body?.string().orEmpty()
                         val jsonArray = JSONArray(bodyStr)
                         val transArray = jsonArray.optJSONArray(0)
                         val sb = StringBuilder()

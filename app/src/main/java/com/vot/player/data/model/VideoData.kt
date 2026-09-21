@@ -62,11 +62,13 @@ enum class VoiceActor(val displayName: String, val voiceId: String, val gender: 
 
 enum class TargetLanguage(val code: String, val displayName: String) {
     RUSSIAN("ru", "Russian"),
+    ROMANIAN("ro", "Romanian"),
     ENGLISH("en", "English")
 }
 
 enum class SubtitlesMode(val label: String, val langCode: String?) {
     OFF("Subtitles Off", null),
     RUSSIAN("Russian", "ru"),
+    ROMANIAN("Romanian", "ro"),
     ENGLISH("English (Original)", "en")
 }

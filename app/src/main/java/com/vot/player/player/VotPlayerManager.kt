@@ -63,6 +63,9 @@ class VotPlayerManager(
     private val _hasRussianSubtitles = MutableStateFlow(false)
     val hasRussianSubtitles: StateFlow<Boolean> = _hasRussianSubtitles.asStateFlow()
 
+    private val _hasRomanianSubtitles = MutableStateFlow(false)
+    val hasRomanianSubtitles: StateFlow<Boolean> = _hasRomanianSubtitles.asStateFlow()
+
     private val _hasEnglishSubtitles = MutableStateFlow(false)
     val hasEnglishSubtitles: StateFlow<Boolean> = _hasEnglishSubtitles.asStateFlow()
 
@@ -91,6 +94,7 @@ class VotPlayerManager(
     private var currentVideoInfo: UniversalVideoInfo? = null
     private var currentVoiceoverAudioUrl: String? = null
     private var russianSubtitleCues: List<SubtitleCue> = emptyList()
+    private var romanianSubtitleCues: List<SubtitleCue> = emptyList()
     private var englishSubtitleCues: List<SubtitleCue> = emptyList()
     private var subtitleCues: List<SubtitleCue> = emptyList()
     private var currentSubtitlesMode: SubtitlesMode = SubtitlesMode.OFF
@@ -361,9 +365,11 @@ class VotPlayerManager(
         voiceoverPlayer.stop()
         voiceoverPlayer.clearMediaItems()
         russianSubtitleCues = emptyList()
+        romanianSubtitleCues = emptyList()
         englishSubtitleCues = emptyList()
         subtitleCues = emptyList()
         _hasRussianSubtitles.value = false
+        _hasRomanianSubtitles.value = false
         _hasEnglishSubtitles.value = false
         _hasSubtitles.value = false
         _currentSubtitle.value = null
@@ -473,21 +479,27 @@ class VotPlayerManager(
         webVideoController?.setPlaybackSpeed(clamped)
     }
 
-    fun setDualSubtitles(ruCues: List<SubtitleCue>, enCues: List<SubtitleCue>) {
+    fun setMultiSubtitles(ruCues: List<SubtitleCue>, roCues: List<SubtitleCue>, enCues: List<SubtitleCue>) {
         russianSubtitleCues = ruCues
+        romanianSubtitleCues = roCues
         englishSubtitleCues = enCues
-        subtitleCues = ruCues.ifEmpty { enCues }
+        subtitleCues = ruCues.ifEmpty { roCues }.ifEmpty { enCues }
         _hasRussianSubtitles.value = ruCues.isNotEmpty()
+        _hasRomanianSubtitles.value = roCues.isNotEmpty()
         _hasEnglishSubtitles.value = enCues.isNotEmpty()
-        _hasSubtitles.value = ruCues.isNotEmpty() || enCues.isNotEmpty()
+        _hasSubtitles.value = ruCues.isNotEmpty() || roCues.isNotEmpty() || enCues.isNotEmpty()
         updateSubtitles(_currentPositionMs.value)
+    }
+
+    fun setDualSubtitles(ruCues: List<SubtitleCue>, enCues: List<SubtitleCue>) {
+        setMultiSubtitles(ruCues, emptyList(), enCues)
     }
 
     fun setSubtitles(cues: List<SubtitleCue>) {
         russianSubtitleCues = cues
         subtitleCues = cues
         _hasRussianSubtitles.value = cues.isNotEmpty()
-        _hasSubtitles.value = cues.isNotEmpty() || englishSubtitleCues.isNotEmpty()
+        _hasSubtitles.value = cues.isNotEmpty() || romanianSubtitleCues.isNotEmpty() || englishSubtitleCues.isNotEmpty()
         updateSubtitles(_currentPositionMs.value)
     }
 
@@ -503,7 +515,12 @@ class VotPlayerManager(
         if (!enabled) {
             currentSubtitlesMode = SubtitlesMode.OFF
         } else if (currentSubtitlesMode == SubtitlesMode.OFF) {
-            currentSubtitlesMode = if (_hasRussianSubtitles.value) SubtitlesMode.RUSSIAN else SubtitlesMode.ENGLISH
+            currentSubtitlesMode = when {
+                _hasRussianSubtitles.value -> SubtitlesMode.RUSSIAN
+                _hasRomanianSubtitles.value -> SubtitlesMode.ROMANIAN
+                _hasEnglishSubtitles.value -> SubtitlesMode.ENGLISH
+                else -> SubtitlesMode.OFF
+            }
         }
         _subtitlesMode.value = currentSubtitlesMode
         updateSubtitles(_currentPositionMs.value)
@@ -517,6 +534,7 @@ class VotPlayerManager(
         val activeCues = when (currentSubtitlesMode) {
             SubtitlesMode.OFF -> emptyList()
             SubtitlesMode.RUSSIAN -> russianSubtitleCues.ifEmpty { subtitleCues }
+            SubtitlesMode.ROMANIAN -> romanianSubtitleCues.ifEmpty { subtitleCues }
             SubtitlesMode.ENGLISH -> englishSubtitleCues
         }
         if (activeCues.isEmpty()) {
