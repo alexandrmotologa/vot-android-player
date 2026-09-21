@@ -1,64 +1,108 @@
-# VOT Player for Android
+<p align="center">
+  <img src="images/logo.png" alt="VOT Player Logo" width="160" />
+</p>
 
-Native, ad-free Android video player that brings automated neural **Voice-Over Translation (VOT)** to English videos into **Russian**. Based on the open-source [voice-over-translation](https://github.com/ilyhalight/voice-over-translation) protocol, VOT Player fetches neural voiceovers and synchronized multilingual subtitles from Yandex translation backends, playing them seamlessly alongside high-resolution video streams.
+<h1 align="center">VOT Player for Android</h1>
+
+<p align="center">
+  <b>Android video player with real-time neural Voice-Over Translation (VOT) from English to Russian and synchronized multilingual subtitles.</b>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/Target_SDK-35-blue?style=flat-square" alt="Target SDK 35" />
+  <img src="https://img.shields.io/badge/Voiceover-Russian_(Neural)-E50914?style=flat-square" alt="Russian Voiceover" />
+  <img src="https://img.shields.io/badge/Subtitles-RU_%7C_RO_%7C_EN-00D2FF?style=flat-square" alt="Multi-Subtitles" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="MIT License" />
+</p>
+
+<p align="center">
+  <img src="images/demo.gif" alt="VOT Player Live Demo" width="340" />
+</p>
 
 ---
 
-## Core Translation Capabilities
+## Overview
+
+VOT Player is an ad-free Android player designed for watching English videos with synchronized Russian voiceover dubbing. Built on the open-source [voice-over-translation](https://github.com/ilyhalight/voice-over-translation) protocol, the application queries neural speech synthesis backends and streams the translated audio track alongside the original video with millisecond clock alignment.
+
+It includes dedicated proxy fallbacks, subtitle extraction for Russian, Romanian, and English, SponsorBlock skipping, offline export to MP4/MP3, and a choice between native hardware-accelerated playback and an integrated YouTube web view.
+
+---
+
+## Interface & Screenshots
+
+| Home & History | Mode Selection | Video Player | Settings & Controls |
+| :---: | :---: | :---: | :---: |
+| <img src="images/screen_home.png" width="220" alt="Home Screen" /> | <img src="images/screen_mode.png" width="220" alt="Mode Chooser" /> | <img src="images/screen_player.png" width="220" alt="Player Screen" /> | <img src="images/screen_settings.png" width="220" alt="Settings Screen" /> |
+| *Clipboard URL detection & watch history* | *Choose Native Player or YouTube Web View* | *Live video with audio balance controls* | *Trigger modes, voice actors & skip Russian* |
+
+---
+
+## Core Translation Features
 
 ### 1. English to Russian Neural Voiceover
-- **Real-Time Synchronized Audio Dubbing**: Plays English video streams alongside neural Russian voiceover tracks with automatic clock drift correction and volume ducking.
-- **Two Distinct Voice Technologies**:
-  - **Standard Voices**: High-stability neural synthesis with selectable voice genders (Male, Female, Auto) and voice actors (**Filipp**, **Ermil**, **Madirus**, **Alena**, **Oksana**, **Jane**). Reliable for all video lengths.
-  - **Live Voices**: Next-generation neural synthesis with realistic human-like pacing, adaptive emotional inflection, and contextual pause placement.
-- **Audio Mixing & Ducking**: Independent volume sliders for the original speaker audio (0–100%) and the translated voiceover (0–100%), with one-tap presets for voiceover-focused listening or original audio focus.
+- **Synchronized Audio Dubbing**: Plays video streams alongside neural Russian voiceover tracks with automatic clock drift compensation and volume ducking.
+- **Two Voice Synthesis Engines**:
+  - **Standard Voices**: Stable neural synthesis with selectable voice genders (Male, Female, Auto) and distinct voice actors (**Filipp**, **Ermil**, **Madirus**, **Alena**, **Oksana**, **Jane**).
+  - **Live Voices**: Neural synthesis configured for conversational speech, dynamic pacing, and natural sentence pauses.
+- **Independent Audio Mixing**: Sliders for original audio (0–100%) and translated voiceover (0–100%), with quick presets for Voice Only, Natural (20% original), Balanced (50%), and Original (100%).
 
-### 2. Guaranteed Multi-Subtitles (RU, RO, EN)
-- **Russian Subtitles (RU)**: Neural translated subtitle track generated directly from the voiceover alignment pipeline.
-- **Romanian Subtitles (RO)**: Neural translated Romanian subtitle stream delivered through proxy infrastructure to avoid YouTube HTTP 429 rate-limiting.
-- **English Original (EN)**: Verbatim original captions extracted directly from YouTube timedtext streams without third-party degradation.
-- **Instant Toggle & Styling**: Easily switch between OFF, Russian, Romanian, and English directly from the player overlay or settings sheet.
+### 2. Synchronized Subtitles (RU, RO, EN)
+- **Russian Subtitles (RU)**: Generated from the neural translation alignment pipeline.
+- **Romanian Subtitles (RO)**: Translated subtitle stream delivered through worker proxies to bypass YouTube IP rate limits.
+- **English Original (EN)**: Extracted directly from official timedtext caption tracks.
+- **Quick Switching**: Toggle between off, Russian, Romanian, and English directly from the player bottom sheet.
 
-### 3. Smart Translation Trigger Modes
-Configure how and when voiceover translation initiates for every video:
-- **Always Auto (`ALWAYS_AUTO`)**: Translation starts immediately in the background upon opening any video.
-- **Ask Every Time (`ASK_EVERY_TIME`)**: Displays a lightweight banner on launch (`Translate to Russian? [Translate] [Keep Original]`). Playback begins immediately without waiting for server queries.
-- **Manual Only (`MANUAL`)**: Starts playing the video in its original language without querying VOT proxy servers. Tap the **Translate (RU)** button on the top action bar or floating pill at any time to request translation on demand.
-- **Smart Russian Video Detection (`autoSkipRussianVideos`)**: Automatically inspects video metadata (Cyrillic character density in title and creator name). If the video is already in Russian, the voiceover query is skipped automatically, preventing awkward duplicate Russian audio and conserving proxy bandwidth. Subtitles remain available.
+### 3. Translation Trigger Modes
+- **Automatic (`ALWAYS_AUTO`)**: Translation starts immediately when a video opens.
+- **Ask Every Time (`ASK_EVERY_TIME`)**: Shows a prompt on video start (`Translate to Russian? [Translate] [Keep Original]`). Playback begins immediately without waiting.
+- **Manual Only (`MANUAL`)**: The video plays in its original language. Translation can be triggered at any time using the **Translate Now** button.
+- **Skip Videos Already in Russian (`autoSkipRussianVideos`)**: Inspects video title and creator metadata for Cyrillic character density. If a video is already in Russian, voiceover synthesis is skipped to prevent duplicate audio and preserve proxy quota. Subtitles remain available.
 
 ---
 
-## Player Features
+## Player Capabilities
 
 - **Dual Playback Modes**:
-  - **Native Player (ExoPlayer)**: Clean, high-performance player with hardware acceleration, adaptive DASH 4K/60fps video, touch gestures (brightness, volume, seeking), and Picture-in-Picture (PiP).
-  - **YouTube Web View**: Integrated mobile web view with synchronized voiceover playback, enabling full access to YouTube comments, recommendations, playlists, and channel pages.
-- **SponsorBlock Integration**: Automatically skips sponsored segments, intros, and sponsor banners using the open-source SponsorBlock database.
-- **Offline Export & Downloads**:
-  - **Export Video (MP4)**: Packages the high-resolution video stream and the Russian translated audio track into a single MP4 file saved to `Downloads/VOT`.
-  - **Export Audio (MP3)**: Extracts and saves the voiceover track as a standalone MP3 file in `Music/VOT` for offline listening.
-- **Podcast & Audio-Only Mode**: Shuts off the video decoder to minimize battery and mobile data usage while keeping background audio and notification controls alive.
-- **Watch History & Resume**: Native SQLite database stores watch progress, resume timestamps, and custom volume levels for every video.
-- **In-App Auto Updater**: Automatically checks GitHub releases for new versions and downloads APK updates directly.
-- **Share-to-Play**: Open links directly from the YouTube app, Twitter/X, Reddit, TikTok, or browser via Android's native share sheet, or via clipboard auto-detection.
+  - **Native Player (ExoPlayer / Media3)**: Hardware-accelerated DASH and HLS playback up to 4K 60fps, touch gestures for brightness and volume, and Picture-in-Picture (PiP).
+  - **YouTube Web View**: Mobile web interface with synchronized voiceover overlay, preserving comments, recommendations, and Google account sign-in.
+- **SponsorBlock**: Automatically skips sponsored segments, intros, and interaction reminders using the crowd-sourced SponsorBlock API.
+- **Offline Export**:
+  - **Export Video (MP4)**: Multiplexes high-resolution video streams and the Russian translated audio track into an MP4 file in `Downloads/VOT`.
+  - **Export Audio (MP3)**: Saves the voiceover track as an MP3 file in `Music/VOT` for podcast-style listening.
+- **Audio-Only Mode**: Shuts off video decoding to conserve battery and mobile data during background listening.
+- **Watch History & Resume**: Local SQLite database saves playback position, video duration, and volume configurations.
+- **In-App Updater**: Checks GitHub releases for new builds and handles APK installation directly.
+- **System Integration**: Accepts shared URLs from YouTube, Twitter/X, Reddit, TikTok, and web browsers via Android's share sheet and clipboard detection.
 
 ---
 
-## Technical Architecture
+## Brand & Mascot
+
+<p align="center">
+  <img src="images/logo.png" width="120" alt="The Acoustic Fennec Fox" />
+</p>
+
+The project mascot is the **Acoustic Fennec Fox**. Known for its large directional ears capable of locating faint sounds across desert sands, the fennec fox represents acoustic precision in VOT Player: isolating speech in foreign audio streams, routing it through neural synthesis pipelines, and delivering synchronized translations in real time.
+
+---
+
+## Architecture
 
 ```
 com.vot.player/
 ├── data/
-│   ├── db/              # SQLiteOpenHelper WatchHistoryDatabase (zero-dependency native SQLite)
+│   ├── db/              # SQLiteOpenHelper WatchHistoryDatabase
 │   ├── extractor/       # MultiPlatformExtractor (YouTube, Twitch, TikTok, direct URLs)
-│   ├── model/           # Data models (UniversalVideoInfo, SubtitleCue, VoiceType)
-│   ├── pref/            # PlayerPreferences (TranslationTriggerMode, PlayerMode, etc.)
+│   ├── model/           # UniversalVideoInfo, SubtitleCue, VoiceType
+│   ├── pref/            # PlayerPreferences (Trigger modes, player modes, audio defaults)
 │   ├── sponsorblock/    # SponsorBlockClient for skip segment queries
 │   ├── update/          # UpdateChecker for GitHub Releases APK downloads
-│   ├── vot/             # VotApiClient, binary Protobuf serializer, HMAC-SHA256 signature generator
-│   └── youtube/         # YouTubeStreamExtractor using InnerTube API client endpoints
+│   ├── vot/             # VotApiClient, binary Protobuf serializer, HMAC-SHA256 signing
+│   └── youtube/         # YouTubeStreamExtractor using InnerTube endpoints
 ├── export/              # VotExportManager (downloading & multiplexing MP4/MP3)
-├── player/              # VotPlayerManager (dual ExoPlayer instances, clock sync, volume ducking)
+├── player/              # VotPlayerManager (dual ExoPlayer instances, clock sync, ducking)
 ├── service/             # VotMediaService (MediaSession, persistent notification, lockscreen controls)
 └── ui/
     ├── components/      # SettingsBottomSheet, SettingsDialog, PlayerModeDialog, Gestures
@@ -68,26 +112,23 @@ com.vot.player/
     └── YouTubeWebScreen.kt # Web player with floating VOT translation controls
 ```
 
-### Protocol & Security
-Requests to Yandex VOT servers require binary Protocol Buffers and custom request signatures:
-- **Binary Protobuf**: Encodes video URL, target language, voice actor choices, and translation session flags.
-- **HMAC-SHA256 Signing**: All outgoing requests are cryptographically signed using `Vtrans-Signature` and token headers.
-- **Proxy Rotation**: Automatically fails over between resilient Cloudflare worker proxies (`vot-worker.vtrans.eu.cc`, `vot-worker.eu.cc`) when upstream rate limits or network hiccups occur.
+### Security & Protocol Handling
+- **Binary Protobuf Serialization**: Translates requests into binary protocol buffer payloads required by Yandex translation endpoints.
+- **HMAC-SHA256 Request Signing**: Generates cryptographic `Vtrans-Signature` headers for outgoing requests.
+- **Proxy Failover**: Automatically rotates across Cloudflare worker proxies (`vot-worker.vtrans.eu.cc`, `vot-worker.eu.cc`) when upstream rate limits occur.
 
 ---
 
 ## Requirements
 
 - **Android Version**: Android 8.0 (API level 26) or higher
-- **Build Target**: Android SDK 35 (compileSdk 35, targetSdk 35)
-- **JDK**: Java 17 or Java 21 (configured for JVM target 21)
-- **Gradle**: Gradle 8.12 (included via `./gradlew`)
+- **Target SDK**: Android 35
+- **JDK**: Java 17 or Java 21
+- **Build System**: Gradle 8.12 (wrapper included)
 
 ---
 
 ## Building from Source
-
-Clone the repository and compile the debug APK:
 
 ```bash
 git clone https://github.com/alexandrmotologa/vot-android-player.git
@@ -95,23 +136,23 @@ cd vot-android-player
 ./gradlew assembleDebug
 ```
 
-The compiled APK will be output at:
+The output APK will be located at:
 ```
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-To build a signed or unsigned release APK:
+To compile a release APK:
 ```bash
 ./gradlew assembleRelease
 ```
 
 ---
 
-## Attribution & Acknowledgments
+## Credits & Acknowledgments
 
-- [voice-over-translation](https://github.com/ilyhalight/voice-over-translation) by ilyhalight for the core reverse-engineering of the Yandex VOT protocol.
+- [voice-over-translation](https://github.com/ilyhalight/voice-over-translation) by ilyhalight for reverse-engineering the Yandex VOT protocol.
 - [SponsorBlock](https://sponsor.ajay.app/) for crowd-sourced sponsor segment skipping.
-- [ExoPlayer / Media3](https://github.com/androidx/media) for native video and audio rendering.
+- [ExoPlayer / Media3](https://github.com/androidx/media) for native playback primitives.
 
 ---
 

@@ -1,0 +1,225 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="squircle-clip">
+      <rect x="24" y="24" width="976" height="976" rx="220" />
+    </clipPath>
+
+    <!-- Optics & Acoustic Telemetry Gradients -->
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="ear-acoustic" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="60%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#e0f2fe"/>
+    </linearGradient>
+
+    <!-- Low-Poly Volumetric Lighting -->
+    <linearGradient id="facet-bright" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+
+    <linearGradient id="facet-lit" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+
+    <linearGradient id="facet-mid" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+
+    <linearGradient id="facet-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+
+    <linearGradient id="facet-deep" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#050811"/>
+    </linearGradient>
+
+    <linearGradient id="silver-muzzle" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cbd5e1"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+
+    <filter id="luxury-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <!-- Luxury White Squircle Container -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="6" />
+
+  <g clip-path="url(#squircle-clip)">
+    <g transform="translate(512, 512)" filter="url(#luxury-shadow)">
+
+      <!-- Hexagonal Telemetry Audio Gateway Frame -->
+      <polygon points="
+        0,-410
+        355,-205
+        355,205
+        0,410
+        -355,205
+        -355,-205
+      " fill="none" stroke="#0f172a" stroke-width="36" stroke-linejoin="round" />
+
+      <!-- Inner Audio Frequency Ring -->
+      <polygon points="
+        0,-375
+        325,-187
+        325,187
+        0,375
+        -325,187
+        -325,-187
+      " fill="none" stroke="#00f5ff" stroke-width="4" opacity="0.45" stroke-dasharray="16, 12" />
+
+      <!-- 1. Solid Watertight Base Silhouette: Acoustic Fennec Fox -->
+      <path d="
+        M 0,-210
+        L 85,-230
+        L 155,-260
+        L 285,-425
+        L 305,-445
+        L 315,-360
+        L 290,-190
+        L 280,-80
+        L 315,40
+        L 280,130
+        L 225,235
+        L 115,310
+        L 0,335
+        L -115,310
+        L -225,235
+        L -280,130
+        L -315,40
+        L -280,-80
+        L -290,-190
+        L -315,-360
+        L -305,-445
+        L -285,-425
+        L -155,-260
+        L -85,-230
+        Z
+      " fill="#0f172a" />
+
+      <!-- 2. Massive Acoustic Fennec Ears (Low-Poly Dual Frequency Pinnae) -->
+      <!-- Right Ear Outer Flange -->
+      <polygon points="155,-260 285,-425 305,-445 285,-310 240,-180" fill="url(#facet-shadow)" />
+      <polygon points="305,-445 315,-360 290,-190 285,-310" fill="url(#facet-deep)" />
+
+      <!-- Right Ear Acoustic Cavity (VOT Listening Array) -->
+      <polygon points="155,-260 285,-310 240,-180 185,-170" fill="url(#facet-lit)" />
+      <polygon points="185,-170 285,-310 260,-220" fill="url(#facet-mid)" />
+      <polygon points="175,-240 270,-380 230,-200" fill="url(#ear-acoustic)" opacity="0.85" />
+      <polygon points="195,-220 250,-350 220,-180" fill="#00f5ff" opacity="0.4" />
+
+      <!-- Left Ear Outer Flange -->
+      <polygon points="-155,-260 -285,-425 -305,-445 -285,-310 -240,-180" fill="url(#facet-lit)" />
+      <polygon points="-305,-445 -315,-360 -290,-190 -285,-310" fill="url(#facet-shadow)" />
+
+      <!-- Left Ear Acoustic Cavity -->
+      <polygon points="-155,-260 -285,-310 -240,-180 -185,-170" fill="url(#facet-bright)" />
+      <polygon points="-185,-170 -285,-310 -260,-220" fill="url(#facet-lit)" />
+      <polygon points="-175,-240 -270,-380 -230,-200" fill="url(#ear-acoustic)" opacity="0.85" />
+      <polygon points="-195,-220 -250,-350 -220,-180" fill="#00f5ff" opacity="0.4" />
+
+      <!-- 3. Cranial Vault & Brow Shell (Symmetrical Low-Poly Origami) -->
+      <!-- Center Forehead Crest -->
+      <polygon points="0,-210 75,-220 65,-130 0,-110" fill="url(#facet-shadow)" />
+      <polygon points="0,-210 -75,-220 -65,-130 0,-110" fill="url(#facet-lit)" />
+      
+      <!-- Temporal Plates -->
+      <polygon points="75,-220 155,-250 175,-150 65,-130" fill="url(#facet-deep)" />
+      <polygon points="-75,-220 -155,-250 -175,-150 -65,-130" fill="url(#facet-bright)" />
+
+      <!-- Brow Ridge Bridge -->
+      <polygon points="0,-110 65,-130 65,-50 0,-30" fill="url(#facet-shadow)" />
+      <polygon points="0,-110 -65,-130 -65,-50 0,-30" fill="url(#facet-lit)" />
+
+      <!-- Eye Socket Upper Keystones -->
+      <polygon points="65,-130 175,-150 165,-60 65,-50" fill="url(#facet-mid)" />
+      <polygon points="-65,-130 -175,-150 -165,-60 -65,-50" fill="url(#facet-bright)" />
+
+      <!-- Lateral Cheek / Zygomatic Arches (Wide Fox Face) -->
+      <polygon points="175,-150 270,-70 220,10 165,-60" fill="url(#facet-deep)" />
+      <polygon points="-175,-150 -270,-70 -220,10 -165,-60" fill="url(#facet-lit)" />
+
+      <polygon points="270,-70 300,50 225,60 220,10" fill="url(#facet-shadow)" />
+      <polygon points="-270,-70 -300,50 -225,60 -220,10" fill="url(#facet-bright)" />
+
+      <!-- 4. Neural Telemetry Eyes (Razor Predator Cant, Brilliant Slanted Cyan Optics) -->
+      <!-- Dark Obsidian Eye Cavity -->
+      <polygon points="60,-45 160,-58 150,-5 60,-15" fill="#050811" />
+      <polygon points="-60,-45 -160,-58 -150,-5 -60,-15" fill="#050811" />
+
+      <!-- Glowing Cyan Iris (Sharp Predator Slant) -->
+      <polygon points="70,-40 150,-52 142,-10 75,-20" fill="url(#cyan-glow)" />
+      <polygon points="-70,-40 -150,-52 -142,-10 -75,-20" fill="url(#cyan-glow)" />
+
+      <!-- Slit Obsidian Pupil -->
+      <polygon points="105,-44 115,-42 110,-15 100,-18" fill="#050811" />
+      <polygon points="-105,-44 -115,-42 -110,-15 -100,-18" fill="#050811" />
+
+      <!-- Pure White Catchlight Reflection -->
+      <polygon points="112,-38 116,-38 113,-30 109,-30" fill="#ffffff" />
+      <polygon points="-112,-38 -116,-38 -113,-30 -109,-30" fill="#ffffff" />
+
+      <!-- Under-Eye Cheekbone Facet -->
+      <polygon points="60,-15 150,-5 130,50 45,40" fill="url(#facet-mid)" />
+      <polygon points="-60,-15 -150,-5 -130,50 -45,40" fill="url(#facet-bright)" />
+
+      <!-- 5. Muzzle, Nose & Acoustic Vocalizer -->
+      <!-- Nasal Bridge -->
+      <polygon points="0,-30 65,-50 45,40 0,60" fill="url(#facet-shadow)" />
+      <polygon points="0,-30 -65,-50 -45,40 0,60" fill="url(#facet-lit)" />
+
+      <!-- Whisker Wings (Subtle Slate, Lateral Spread) -->
+      <polygon points="45,40 130,50 190,110 100,105" fill="url(#facet-mid)" />
+      <polygon points="-45,40 -130,50 -190,110 -100,105" fill="url(#facet-lit)" />
+
+      <polygon points="0,60 45,40 100,105 35,135 0,145" fill="url(#facet-shadow)" />
+      <polygon points="0,60 -45,40 -100,105 -35,135 0,145" fill="url(#facet-mid)" />
+
+      <!-- Sharp Obsidian Nose Tip -->
+      <polygon points="0,60 25,58 20,85 0,95" fill="#050811" />
+      <polygon points="0,60 -25,58 -20,85 0,95" fill="#0f172a" />
+      <polygon points="0,95 20,85 0,105 -20,85" fill="#0284c7" />
+
+      <!-- Chin & Acoustic Vocal Track -->
+      <polygon points="0,145 35,135 25,180 0,190" fill="url(#facet-deep)" />
+      <polygon points="0,145 -35,135 -25,180 0,190" fill="url(#facet-shadow)" />
+
+      <!-- Lower Jaw & Throat Mantle -->
+      <polygon points="0,195 35,185 115,225 70,275 0,290" fill="url(#facet-shadow)" />
+      <polygon points="0,195 -35,185 -115,225 -70,275 0,290" fill="url(#facet-lit)" />
+
+      <!-- Neck Ruffs & Outer Crest -->
+      <polygon points="45,135 110,95 205,115 185,190 115,225" fill="url(#facet-deep)" />
+      <polygon points="-45,135 -110,95 -205,115 -185,190 -115,225" fill="url(#facet-mid)" />
+
+      <polygon points="205,115 280,130 225,235 185,190" fill="url(#facet-shadow)" />
+      <polygon points="-205,115 -280,130 -225,235 -185,190" fill="url(#facet-bright)" />
+
+      <polygon points="185,190 225,235 115,310 70,275" fill="url(#facet-deep)" />
+      <polygon points="-185,190 -225,235 -115,310 -70,275" fill="url(#facet-lit)" />
+
+      <polygon points="70,275 115,310 0,335" fill="url(#facet-shadow)" />
+      <polygon points="-70,275 -115,310 0,335" fill="url(#facet-bright)" />
+
+      <!-- 6. Acoustic Telemetry Wave Bars (Negative Space Subtlety on Chest) -->
+      <polygon points="0,225 15,215 12,235 0,240" fill="#00f5ff" opacity="0.8" />
+      <polygon points="0,225 -15,215 -12,235 0,240" fill="#00f5ff" opacity="0.8" />
+      <polygon points="0,250 25,238 20,260 0,268" fill="#00f5ff" opacity="0.6" />
+      <polygon points="0,250 -25,238 -20,260 0,268" fill="#00f5ff" opacity="0.6" />
+      <polygon points="0,280 40,265 32,288 0,300" fill="#00f5ff" opacity="0.4" />
+      <polygon points="0,280 -40,265 -32,288 0,300" fill="#00f5ff" opacity="0.4" />
+
+    </g>
+  </g>
+</svg>
