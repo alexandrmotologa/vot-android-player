@@ -1,13 +1,13 @@
 # VOT Player for Android
 
-Native, ad-free Android video player that brings automated neural **Voice-Over Translation (VOT)** to foreign-language videos (English, German, French, Spanish, etc.) into **Russian**. Based on the open-source [voice-over-translation](https://github.com/ilyhalight/voice-over-translation) protocol, VOT Player fetches neural voiceovers and synchronized multilingual subtitles from Yandex translation backends, playing them seamlessly alongside high-resolution video streams.
+Native, ad-free Android video player that brings automated neural **Voice-Over Translation (VOT)** to English videos into **Russian**. Based on the open-source [voice-over-translation](https://github.com/ilyhalight/voice-over-translation) protocol, VOT Player fetches neural voiceovers and synchronized multilingual subtitles from Yandex translation backends, playing them seamlessly alongside high-resolution video streams.
 
 ---
 
 ## Core Translation Capabilities
 
 ### 1. English to Russian Neural Voiceover
-- **Real-Time Synchronized Audio Dubbing**: Plays foreign video streams alongside neural Russian voiceover tracks with automatic clock drift correction and volume ducking.
+- **Real-Time Synchronized Audio Dubbing**: Plays English video streams alongside neural Russian voiceover tracks with automatic clock drift correction and volume ducking.
 - **Two Distinct Voice Technologies**:
   - **Standard Voices**: High-stability neural synthesis with selectable voice genders (Male, Female, Auto) and voice actors (**Filipp**, **Ermil**, **Alena**, **Oksana**). Reliable for all video lengths.
   - **Live Voices**: Next-generation neural synthesis with realistic human-like pacing, adaptive emotional inflection, and contextual pause placement.
