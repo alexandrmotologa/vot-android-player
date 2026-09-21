@@ -58,11 +58,20 @@ class YouTubeStreamExtractor(
                 })
             }
 
-            val request = Request.Builder()
+            val cookie = try {
+                android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com")
+            } catch (e: Exception) {
+                null
+            }
+
+            val reqBuilder = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/player")
                 .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                .build()
+            if (!cookie.isNullOrEmpty()) {
+                reqBuilder.header("Cookie", cookie)
+            }
+            val request = reqBuilder.build()
 
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string()
@@ -93,11 +102,14 @@ class YouTubeStreamExtractor(
                         })
                     })
                 }
-                val fbRequest = Request.Builder()
+                val fbReqBuilder = Request.Builder()
                     .url("https://www.youtube.com/youtubei/v1/player")
                     .post(fallbackRequestJson.toString().toRequestBody("application/json".toMediaType()))
                     .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip")
-                    .build()
+                if (!cookie.isNullOrEmpty()) {
+                    fbReqBuilder.header("Cookie", cookie)
+                }
+                val fbRequest = fbReqBuilder.build()
                 val fbResponse = client.newCall(fbRequest).execute()
                 val fbBody = fbResponse.body?.string()
                 if (!fbBody.isNullOrEmpty()) {

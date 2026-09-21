@@ -257,6 +257,29 @@ fun YouTubeWebScreen(
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isWebLoading = false
+                                val hideAdsCss = """
+                                    const style = document.createElement('style');
+                                    style.textContent = `
+                                        .ad-showing .ytp-ad-player-overlay,
+                                        .ad-showing .video-ads,
+                                        .ad-showing .ytm-ad-badge,
+                                        .ad-showing .ytp-ad-module,
+                                        .ad-interrupting .ytp-ad-player-overlay,
+                                        .ad-interrupting .video-ads,
+                                        .ad-interrupting .ytm-ad-badge,
+                                        .ad-interrupting .ytp-ad-module,
+                                        ytm-promoted-sparkles-web-renderer,
+                                        ytm-companion-ad-renderer,
+                                        ytm-ad-slot-renderer,
+                                        .ad-container,
+                                        ytm-mealbar-promo-renderer {
+                                            display: none !important;
+                                            opacity: 0 !important;
+                                        }
+                                    `;
+                                    document.head.appendChild(style);
+                                """.trimIndent()
+                                view?.evaluateJavascript(hideAdsCss, null)
                                 view?.evaluateJavascript(VotWebBridge.INJECTION_SCRIPT, null)
                                 view?.evaluateJavascript("window.setOriginalVolume($originalVolume);", null)
                                 if (startPositionMs > 0L) {

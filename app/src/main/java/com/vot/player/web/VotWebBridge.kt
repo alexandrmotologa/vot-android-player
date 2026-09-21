@@ -64,6 +64,14 @@ class VotWebBridge(
             .ytp-unmute-inner,
             .ytp-unmute-box,
             .player-control-overlay-unmute,
+            .ad-showing .ytp-ad-player-overlay,
+            .ad-showing .video-ads,
+            .ad-showing .ytm-ad-badge,
+            .ad-showing .ytp-ad-module,
+            .ad-interrupting .ytp-ad-player-overlay,
+            .ad-interrupting .video-ads,
+            .ad-interrupting .ytm-ad-badge,
+            .ad-interrupting .ytp-ad-module,
             [aria-label*="unmute" i],
             [aria-label*="Unmute" i],
             .ytp-button[aria-label*="unmute" i] {
@@ -85,7 +93,9 @@ class VotWebBridge(
                    url.contains("youtube.com/api/stats/ads") ||
                    url.contains("youtube.com/get_midroll_info") ||
                    url.contains("youtube.com/ptracking") ||
-                   url.contains("adservice.google.")
+                   url.contains("adservice.google.") ||
+                   url.contains("pubads.g.doubleclick.net") ||
+                   url.contains("securepubads.g.doubleclick.net")
         }
 
         val INJECTION_SCRIPT = """
@@ -96,8 +106,20 @@ class VotWebBridge(
                 window.__vot_original_volume = 0.0;
                 window.__vot_seeking_until = 0;
 
+                function isAdActive() {
+                    const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                    if (p && p.classList && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) return true;
+                    if (p && typeof p.getAdState === 'function' && p.getAdState() === 1) return true;
+                    if (document.querySelector('.ad-showing, .ad-interrupting')) return true;
+                    return false;
+                }
+
                 function applyTargetVolume(video) {
                     if (!video) return;
+                    if (isAdActive()) {
+                        video.muted = true;
+                        return;
+                    }
                     const vol = (window.__vot_original_volume !== undefined) ? window.__vot_original_volume : 0.0;
                     const shouldMute = (vol <= 0.01);
                     if (video.muted !== shouldMute || Math.abs(video.volume - vol) > 0.02) {
@@ -109,6 +131,7 @@ class VotWebBridge(
                 function notifyTime(video) {
                     if (!video || !window.VotAndroidBridge) return;
                     if (Date.now() < window.__vot_seeking_until) return; // Don't report old positions right after seeking!
+                    if (isAdActive()) return; // Never report ad duration or time to Android bridge!
                     const posMs = Math.round(video.currentTime * 1000);
                     const durMs = Math.round((video.duration || 0) * 1000);
                     window.VotAndroidBridge.onVideoTimeUpdate(posMs, durMs);
@@ -116,7 +139,7 @@ class VotWebBridge(
 
                 // Dedicated seek handler that interacts with YouTube's player API and HTML5 video
                 window.__vot_seekTo = function(sec) {
-                    window.__vot_seeking_until = Date.now() + 1000; // block timeupdate for 1000ms during seek buffer
+                    window.__vot_seeking_until = Date.now() + 1500; // block timeupdate for 1500ms during seek buffer
                     try {
                         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                         if (player && typeof player.seekTo === 'function') {
@@ -129,6 +152,10 @@ class VotWebBridge(
                             video.currentTime = sec;
                         }
                     } catch(e) {}
+                    setTimeout(skipAndBlockAds, 40);
+                    setTimeout(skipAndBlockAds, 120);
+                    setTimeout(skipAndBlockAds, 250);
+                    setTimeout(skipAndBlockAds, 500);
                 };
 
                 window.__vot_play = function() {
@@ -241,26 +268,41 @@ class VotWebBridge(
                     } catch(e) {}
                 }
 
-                // Active ad blocking & skipping for mobile YouTube (safe - never touches video.currentTime)
+                // Active ad blocking & skipping for mobile YouTube
                 function skipAndBlockAds() {
                     try {
-                        const skipBtns = document.querySelectorAll(
-                            '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button.ytp-ad-skip-button-slot, [class*="skip-button"], .ytm-skip-ad-button'
-                        );
-                        skipBtns.forEach(function(b) {
-                            try {
-                                if (b.offsetParent !== null || b.offsetWidth > 0 || b.offsetHeight > 0) {
-                                    b.click();
-                                }
-                            } catch(e) {}
-                        });
-
                         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                        if (player && typeof player.skipAd === 'function') {
-                            const isAd = (player.classList && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')))
-                                || (typeof player.getAdState === 'function' && player.getAdState() === 1);
-                            if (isAd) {
+                        const isAd = isAdActive();
+
+                        if (isAd) {
+                            const video = document.querySelector('video');
+                            if (video) {
+                                video.muted = true;
+                                video.playbackRate = 16.0;
+                                if (isFinite(video.duration) && video.duration > 0) {
+                                    video.currentTime = video.duration;
+                                }
+                            }
+
+                            const skipBtns = document.querySelectorAll(
+                                '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button.ytp-ad-skip-button-slot, [class*="skip-button"], .ytm-skip-ad-button'
+                            );
+                            skipBtns.forEach(function(b) {
+                                try {
+                                    if (b.offsetParent !== null || b.offsetWidth > 0 || b.offsetHeight > 0) {
+                                        b.click();
+                                    }
+                                } catch(e) {}
+                            });
+
+                            if (player && typeof player.skipAd === 'function') {
                                 try { player.skipAd(); } catch(e) {}
+                            }
+                        } else {
+                            // Restore normal speed if it was accelerated by ad skipper
+                            const video = document.querySelector('video');
+                            if (video && video.playbackRate > 2.0) {
+                                video.playbackRate = 1.0;
                             }
                         }
 
@@ -281,6 +323,21 @@ class VotWebBridge(
                                 });
                             } catch(e) {}
                         });
+                    } catch(e) {}
+                }
+
+                function installAdObserver() {
+                    try {
+                        const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (player && window.MutationObserver && !player.__vot_obs) {
+                            player.__vot_obs = true;
+                            const obs = new MutationObserver(function() {
+                                if (isAdActive()) {
+                                    skipAndBlockAds();
+                                }
+                            });
+                            obs.observe(player, { attributes: true, attributeFilter: ['class'] });
+                        }
                     } catch(e) {}
                 }
 
@@ -310,6 +367,7 @@ class VotWebBridge(
                 };
 
                 setInterval(function() {
+                    installAdObserver();
                     const v = document.querySelector('video');
                     if (v) {
                         applyTargetVolume(v);
