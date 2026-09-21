@@ -34,18 +34,14 @@ object VotProtobuf {
     }
 
     private fun writeBool(out: ByteArrayOutputStream, fieldNumber: Int, value: Boolean) {
-        if (value) {
-            writeTag(out, fieldNumber, 0)
-            writeVarint(out, 1)
-        }
+        writeTag(out, fieldNumber, 0)
+        writeVarint(out, if (value) 1 else 0)
     }
 
     private fun writeDouble(out: ByteArrayOutputStream, fieldNumber: Int, value: Double) {
-        if (value != 0.0) {
-            writeTag(out, fieldNumber, 1)
-            val buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putDouble(value)
-            out.write(buf.array())
-        }
+        writeTag(out, fieldNumber, 1)
+        val buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putDouble(value)
+        out.write(buf.array())
     }
 
     private fun readVarint(stream: ByteArrayInputStream): Long {
@@ -126,7 +122,8 @@ object VotProtobuf {
         val out = ByteArrayOutputStream()
         writeString(out, 3, url)
         writeBool(out, 5, firstRequest)
-        writeDouble(out, 6, duration)
+        val validDuration = if (duration <= 0.0) 300.0 else duration
+        writeDouble(out, 6, validDuration)
         writeBool(out, 7, true) // unknown0 = true (CRITICAL for Yandex VOT protocol)
         writeString(out, 8, requestLang)
         writeString(out, 14, responseLang)

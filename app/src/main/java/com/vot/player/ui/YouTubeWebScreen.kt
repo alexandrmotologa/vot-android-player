@@ -87,6 +87,7 @@ fun YouTubeWebScreen(
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showControlsSheet by remember { mutableStateOf(false) }
+    var showSubtitlePicker by remember { mutableStateOf(false) }
     var pageTitle by remember { mutableStateOf("YouTube") }
     var isWebLoading by remember { mutableStateOf(true) }
     var lastNavigatedSpaVideoId by remember { mutableStateOf<String?>(null) }
@@ -108,7 +109,11 @@ fun YouTubeWebScreen(
 
     // Handle back button: return from landscape to portrait, or go back in web history, else exit to Home
     BackHandler {
-        if (isLandscape) {
+        if (showSubtitlePicker) {
+            showSubtitlePicker = false
+        } else if (showControlsSheet) {
+            showControlsSheet = false
+        } else if (isLandscape) {
             val act = context as? android.app.Activity
             act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else if (webViewRef?.canGoBack() == true) {
@@ -257,6 +262,38 @@ fun YouTubeWebScreen(
                     }
                     IconButton(onClick = { webViewRef?.reload() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = Color.White)
+                    }
+                    IconButton(onClick = { showSubtitlePicker = true }) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (selectedSubtitles != SubtitlesMode.OFF) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
+                                contentDescription = "Subtitles / Closed Captions",
+                                tint = if (selectedSubtitles != SubtitlesMode.OFF) AccentRed else Color.White
+                            )
+                            if (selectedSubtitles != SubtitlesMode.OFF) {
+                                val badge = when (selectedSubtitles) {
+                                    SubtitlesMode.RUSSIAN -> "RU"
+                                    SubtitlesMode.ROMANIAN -> "RO"
+                                    SubtitlesMode.ENGLISH -> "EN"
+                                    else -> ""
+                                }
+                                Surface(
+                                    color = AccentRed,
+                                    shape = RoundedCornerShape(3.dp),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .offset(x = 2.dp, y = 2.dp)
+                                ) {
+                                    Text(
+                                        text = badge,
+                                        color = Color.White,
+                                        fontSize = 7.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                     IconButton(onClick = { showControlsSheet = true }) {
                         Icon(Icons.Default.Tune, contentDescription = "VOT Audio Controls", tint = AccentRed)
@@ -647,6 +684,83 @@ fun YouTubeWebScreen(
                     onTriggerTranslation()
                 },
                 onDismiss = { showControlsSheet = false }
+            )
+        }
+
+        // Subtitle Language Quick Picker Dialog
+        if (showSubtitlePicker) {
+            AlertDialog(
+                onDismissRequest = { showSubtitlePicker = false },
+                containerColor = Color(0xFF1E1E28),
+                titleContentColor = Color.White,
+                textContentColor = Color.White,
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Subtitles,
+                            contentDescription = null,
+                            tint = AccentRed,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Subtitles / Captions",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        SubtitlesMode.values().forEach { mode ->
+                            val isSelected = selectedSubtitles == mode
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) AccentRed.copy(alpha = 0.2f) else Color(0x11FFFFFF),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, AccentRed) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSubtitlesChange(mode)
+                                        showSubtitlePicker = false
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = mode.label,
+                                        color = if (isSelected) Color.White else Color(0xFFCCCCCC),
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Active",
+                                            tint = AccentRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSubtitlePicker = false }) {
+                        Text("Close", color = Color.White)
+                    }
+                }
             )
         }
     }

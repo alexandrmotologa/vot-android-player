@@ -208,6 +208,17 @@ class MainActivity : ComponentActivity() {
                                     selectedSubtitles = newSubs
                                     prefs.preferredSubtitlesMode = newSubs
                                     playerManager.setSubtitlesMode(newSubs)
+                                    if (newSubs != SubtitlesMode.OFF) {
+                                        val curInfo = currentVideoInfo
+                                        val vUrl = if (curInfo?.platform == PlatformType.YOUTUBE) {
+                                            "https://www.youtube.com/watch?v=${curInfo.id}"
+                                        } else {
+                                            curInfo?.rawUrl ?: activeVideoUrl ?: ""
+                                        }
+                                        if (vUrl.isNotEmpty()) {
+                                            fetchSubtitlesOnly(vUrl)
+                                        }
+                                    }
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
@@ -295,6 +306,17 @@ class MainActivity : ComponentActivity() {
                                     selectedSubtitles = newSubs
                                     prefs.preferredSubtitlesMode = newSubs
                                     playerManager.setSubtitlesMode(newSubs)
+                                    if (newSubs != SubtitlesMode.OFF) {
+                                        val curInfo = currentVideoInfo
+                                        val vUrl = if (curInfo?.platform == PlatformType.YOUTUBE) {
+                                            "https://www.youtube.com/watch?v=${curInfo.id}"
+                                        } else {
+                                            curInfo?.rawUrl ?: activeVideoUrl ?: ""
+                                        }
+                                        if (vUrl.isNotEmpty()) {
+                                            fetchSubtitlesOnly(vUrl)
+                                        }
+                                    }
                                 },
                                 selectedLanguage = selectedLanguage,
                                 onLanguageChange = { newLang ->
@@ -613,36 +635,31 @@ class MainActivity : ComponentActivity() {
         durationSeconds: Double = 0.0,
         isInitialStart: Boolean = false
     ) {
+        val durToUse = if (durationSeconds > 0.0) {
+            durationSeconds
+        } else if ((currentVideoInfo?.durationSeconds ?: 0L) > 0L) {
+            currentVideoInfo!!.durationSeconds.toDouble()
+        } else {
+            300.0
+        }
+
+        // Fetch subtitles concurrently so they are immediately available without waiting for voiceover
+        fetchSubtitlesOnly(votUrl)
+
         translationJob?.cancel()
         translationJob = lifecycleScope.launch {
             isLoading = true
             statusMessage = "Requesting Russian voice-over translation..."
             val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
 
-            val subtitlesDeferred = async {
-                votApiClient.getMultiSubtitles(votUrl)
-            }
-
             val votResult = votApiClient.translateVideo(
                 videoUrl = votUrl,
-                durationSeconds = durationSeconds,
+                durationSeconds = durToUse,
                 targetLang = selectedLanguage,
                 voiceType = selectedVoiceType,
                 preferredVoice = preferredVoiceParam,
                 onProgress = { statusMessage = it }
             )
-
-            val multiSubsResult = subtitlesDeferred.await()
-            val multiSubs = multiSubsResult.getOrNull()
-            val ruCues = multiSubs?.russianCues ?: emptyList()
-            val roCues = multiSubs?.romanianCues ?: emptyList()
-            val enCues = multiSubs?.englishCues ?: emptyList()
-            hasRussianSubtitles = ruCues.isNotEmpty()
-            hasRomanianSubtitles = roCues.isNotEmpty()
-            hasEnglishSubtitles = enCues.isNotEmpty()
-            hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
-            playerManager.setMultiSubtitles(ruCues, roCues, enCues)
-            playerManager.setSubtitlesMode(selectedSubtitles)
 
             val translatedAudioUrl = votResult.getOrNull()?.url
             currentTranslatedAudioUrl = translatedAudioUrl

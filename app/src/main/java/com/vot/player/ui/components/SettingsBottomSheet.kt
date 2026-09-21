@@ -429,8 +429,8 @@ fun SettingsBottomSheet(
                             val anySubtitlesAvailable = hasSubtitles || hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
                             if (!anySubtitlesAvailable) {
                                 Text(
-                                    text = "Notice: Subtitles are not available for this video",
-                                    color = Color(0xFFFFA726),
+                                    text = "Notice: Subtitles are loaded and translated on-demand",
+                                    color = Color(0xFF81D4FA),
                                     fontSize = 11.sp,
                                     modifier = Modifier.padding(bottom = 6.dp)
                                 )
@@ -441,22 +441,14 @@ fun SettingsBottomSheet(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 SubtitlesMode.values().forEach { sub ->
-                                    val isEnabled = when (sub) {
-                                        SubtitlesMode.OFF -> true
-                                        SubtitlesMode.RUSSIAN -> hasRussianSubtitles || hasSubtitles
-                                        SubtitlesMode.ROMANIAN -> hasRomanianSubtitles || hasSubtitles
-                                        SubtitlesMode.ENGLISH -> hasEnglishSubtitles || hasSubtitles
-                                    }
                                     FilterChip(
                                         selected = selectedSubtitles == sub,
-                                        onClick = { if (isEnabled) onSubtitlesChange(sub) },
-                                        enabled = isEnabled,
+                                        onClick = { onSubtitlesChange(sub) },
+                                        enabled = true,
                                         label = { Text(sub.label, fontSize = 12.sp) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             selectedContainerColor = AccentRed,
-                                            selectedLabelColor = Color.White,
-                                            disabledContainerColor = Color(0x11FFFFFF),
-                                            disabledLabelColor = Color.Gray
+                                            selectedLabelColor = Color.White
                                         )
                                     )
                                 }

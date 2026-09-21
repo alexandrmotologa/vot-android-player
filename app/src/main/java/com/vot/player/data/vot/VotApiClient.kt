@@ -158,7 +158,7 @@ class VotApiClient(
         try {
             var firstRequest = true
             var attempts = 0
-            val maxAttempts = 15
+            val maxAttempts = 35
 
             while (attempts < maxAttempts) {
                 attempts++
@@ -169,7 +169,7 @@ class VotApiClient(
 
                 val requestBytes = VotProtobuf.encodeTranslationRequest(
                     url = videoUrl,
-                    duration = durationSeconds,
+                    duration = if (durationSeconds <= 0.0) 300.0 else durationSeconds,
                     responseLang = targetLang.code,
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
@@ -199,10 +199,20 @@ class VotApiClient(
 
                 val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
+                    val code = response.code
                     rotateHost()
-                    activeSession = null
+                    if (code == 429) {
+                        // Rate limit backoff
+                        delay(minOf(attempts * 2500L, 8000L))
+                    } else if (code in 500..599) {
+                        delay(minOf(attempts * 1500L, 5000L))
+                    } else {
+                        // HTTP 400 or other client error: reset session and backoff
+                        activeSession = null
+                        delay(minOf(attempts * 1200L, 4000L))
+                    }
                     if (attempts < maxAttempts) continue
-                    return@withContext Result.failure(Exception("Translation request failed: HTTP ${response.code}"))
+                    return@withContext Result.failure(Exception("Translation request failed: HTTP $code"))
                 }
 
                 val responseBytes = response.body?.bytes()
@@ -214,12 +224,13 @@ class VotApiClient(
                     onProgress?.invoke("Translation ready!")
                     return@withContext Result.success(result)
                 } else if (result.isWaiting) {
-                    val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(1, 10) else 2
+                    val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 8) else 3
+                    val remainingInfo = if (result.remainingTime > 0) " (~${result.remainingTime}s remaining)..." else "..."
                     onProgress?.invoke(
                         if (voiceType == VoiceType.LIVE_VOICE) 
-                            "Generating Live Voice (~${result.remainingTime}s remaining)..."
+                            "Generating Live Voice$remainingInfo"
                         else 
-                            "Generating voice-over translation (~${result.remainingTime}s remaining)..."
+                            "Generating voice-over translation$remainingInfo"
                     )
                     delay(waitSec * 1000L)
                 } else if (result.isFailed) {
@@ -447,22 +458,21 @@ class VotApiClient(
             }
         } catch (_: Exception) {}
 
-        // 2. Fallback: Parse watch page HTML for ytInitialPlayerResponse
+        // 2. Fallback: Parse watch page HTML for captionTracks
         if (captionTracksArray == null || captionTracksArray.length() == 0) {
             try {
                 val pageReq = Request.Builder()
                     .url("https://www.youtube.com/watch?v=$videoId")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+                    .header("Accept-Language", "en-US,en;q=0.9")
                     .build()
                 val pageResp = okHttpClient.newCall(pageReq).execute()
                 val html = pageResp.body?.string().orEmpty()
-                val p = Pattern.compile("ytInitialPlayerResponse\\s*=\\s*(\\{.+?\\});")
-                val m = p.matcher(html)
-                if (m.find()) {
-                    val pJson = JSONObject(m.group(1) ?: "{}")
-                    captionTracksArray = pJson.optJSONObject("captions")
-                        ?.optJSONObject("playerCaptionsTracklistRenderer")
-                        ?.optJSONArray("captionTracks")
+                val directPattern = Pattern.compile("\"captionTracks\":\\s*(\\[.+?\\])")
+                val directMatcher = directPattern.matcher(html)
+                if (directMatcher.find()) {
+                    val tracksJsonStr = directMatcher.group(1) ?: "[]"
+                    captionTracksArray = JSONArray(tracksJsonStr)
                 }
             } catch (_: Exception) {}
         }
@@ -495,22 +505,40 @@ class VotApiClient(
 
         fun downloadAndParse(rawUrl: String): List<SubtitleCue> {
             if (rawUrl.isBlank()) return emptyList()
-            var url = rawUrl
-            if (!url.contains("fmt=")) {
-                url += "&fmt=json3"
-            }
-            return try {
+            // 1. Try direct raw url (preserves valid signature and XML/srv format)
+            try {
                 val req = Request.Builder()
-                    .url(url)
+                    .url(rawUrl)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .header("Referer", "https://www.youtube.com/")
                     .build()
                 val resp = okHttpClient.newCall(req).execute()
                 if (resp.isSuccessful) {
-                    parseSubtitles(resp.body?.string().orEmpty())
-                } else emptyList()
-            } catch (_: Exception) {
-                emptyList()
+                    val text = resp.body?.string().orEmpty()
+                    val cues = parseSubtitles(text)
+                    if (cues.isNotEmpty()) return cues
+                }
+            } catch (_: Exception) {}
+
+            // 2. Try with &fmt=json3 if not already specified
+            if (!rawUrl.contains("fmt=")) {
+                try {
+                    val json3Url = if (rawUrl.contains("?")) "$rawUrl&fmt=json3" else "$rawUrl?fmt=json3"
+                    val req = Request.Builder()
+                        .url(json3Url)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                        .header("Referer", "https://www.youtube.com/")
+                        .build()
+                    val resp = okHttpClient.newCall(req).execute()
+                    if (resp.isSuccessful) {
+                        val text = resp.body?.string().orEmpty()
+                        val cues = parseSubtitles(text)
+                        if (cues.isNotEmpty()) return cues
+                    }
+                } catch (_: Exception) {}
             }
+
+            return emptyList()
         }
 
         if (ruUrl.isNotEmpty()) {
