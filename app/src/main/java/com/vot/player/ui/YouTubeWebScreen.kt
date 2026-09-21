@@ -284,6 +284,8 @@ fun YouTubeWebScreen(
                 subtitleText = currentSubtitle,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .displayCutoutPadding()
                     .padding(bottom = if (isLandscape) 40.dp else 90.dp)
                     .padding(horizontal = 20.dp)
             )
@@ -297,6 +299,8 @@ fun YouTubeWebScreen(
                 shadowElevation = 8.dp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .displayCutoutPadding()
                     .padding(16.dp)
                     .clickable { showControlsSheet = true }
             ) {

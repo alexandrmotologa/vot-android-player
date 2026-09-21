@@ -406,6 +406,8 @@ fun PlayerScreen(
             subtitleText = currentSubtitle,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .displayCutoutPadding()
                 .padding(bottom = if (showControls) (if (isLandscape) 135.dp else 195.dp) else 36.dp)
                 .padding(horizontal = 20.dp)
         )
@@ -436,7 +438,9 @@ fun PlayerScreen(
                 contentColor = Color.White,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = if (isLandscape) 48.dp else 68.dp)
+                    .statusBarsPadding()
+                    .displayCutoutPadding()
+                    .padding(top = if (isLandscape) 56.dp else 68.dp)
             ) {
                 Text(
                     text = statusMessage,
@@ -465,7 +469,9 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
-                        .padding(horizontal = 8.dp, vertical = if (isLandscape) 6.dp else 12.dp),
+                        .statusBarsPadding()
+                        .displayCutoutPadding()
+                        .padding(horizontal = 8.dp, vertical = if (isLandscape) 4.dp else 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -595,6 +601,8 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .displayCutoutPadding()
                         .padding(horizontal = if (isLandscape) 24.dp else 14.dp, vertical = if (isLandscape) 4.dp else 8.dp)
                 ) {
                     var isDraggingSlider by remember { mutableStateOf(false) }
@@ -660,7 +668,9 @@ fun PlayerScreen(
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = if (isLandscape) 12.dp else 28.dp, end = 16.dp)
+                .statusBarsPadding()
+                .displayCutoutPadding()
+                .padding(top = if (isLandscape) 8.dp else 12.dp, end = 16.dp)
         ) {
             Surface(
                 onClick = { showControls = true },
