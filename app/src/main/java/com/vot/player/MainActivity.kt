@@ -668,6 +668,18 @@ class MainActivity : ComponentActivity() {
                     val cues = subtitlesResult.getOrDefault(emptyList())
                     hasSubtitles = cues.isNotEmpty()
 
+                    val resumePositionMs = if (requestedStartPositionMs > 0L) {
+                        requestedStartPositionMs
+                    } else {
+                        val existing = historyDb.getHistoryItem(fallbackInfo.id)
+                        val lastPos = existing?.lastPositionMs ?: 0L
+                        val dur = existing?.durationMs ?: 0L
+                        if (dur > 0L && (lastPos >= dur || (dur - lastPos) < 10_000L)) 0L else lastPos
+                    }
+                    if (resumePositionMs > 0L) {
+                        playerManager.syncWebPosition(resumePositionMs, 0L)
+                    }
+
                     isLoading = false
                     val translatedAudioUrl = votResult.getOrNull()?.url
                     currentTranslatedAudioUrl = translatedAudioUrl
@@ -686,6 +698,12 @@ class MainActivity : ComponentActivity() {
                     isCustomVoiceSupported = false
                     if (votResult.isSuccess) {
                         statusMessage = "Translation active (Russian)"
+                        launch {
+                            delay(2500L)
+                            if (statusMessage == "Translation active (Russian)") {
+                                statusMessage = null
+                            }
+                        }
                     } else {
                         statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
                     }
@@ -703,7 +721,7 @@ class MainActivity : ComponentActivity() {
                             url = rawUrl,
                             title = fallbackInfo.title,
                             thumbnailUrl = fallbackInfo.thumbnailUrl ?: "",
-                            lastPositionMs = 0L,
+                            lastPositionMs = resumePositionMs,
                             durationMs = 0L,
                             preferredVoice = selectedVoiceType.name.lowercase(),
                             originalVolume = playerManager.originalVolume.value,
@@ -735,7 +753,7 @@ class MainActivity : ComponentActivity() {
                 val existing = historyDb.getHistoryItem(videoInfo.id)
                 val lastPos = existing?.lastPositionMs ?: 0L
                 val dur = existing?.durationMs ?: (videoInfo.durationSeconds * 1000L)
-                if (dur > 0L && (dur - lastPos) < 10_000L) 0L else lastPos
+                if (dur > 0L && (lastPos >= dur || (dur - lastPos) < 10_000L)) 0L else lastPos
             }
 
             // Start native video playback immediately with ExoPlayer

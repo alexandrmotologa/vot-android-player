@@ -45,7 +45,6 @@ class VotWebBridge(
             ytm-reel-shelf-renderer,
             ytm-ad-slot-renderer,
             .ad-container,
-            .video-ads,
             .ytp-chrome-bottom,
             .ytp-chrome-top,
             .ytp-play-button,
@@ -77,6 +76,17 @@ class VotWebBridge(
                 background: #000 !important;
             }
         """.trimIndent()
+
+        fun isAdUrl(url: String): Boolean {
+            return url.contains("doubleclick.net") ||
+                   url.contains("googleads.g.doubleclick.net") ||
+                   url.contains("pagead2.googlesyndication.com") ||
+                   url.contains("youtube.com/pagead/") ||
+                   url.contains("youtube.com/api/stats/ads") ||
+                   url.contains("youtube.com/get_midroll_info") ||
+                   url.contains("youtube.com/ptracking") ||
+                   url.contains("adservice.google.")
+        }
 
         val INJECTION_SCRIPT = """
             (function() {
@@ -231,31 +241,26 @@ class VotWebBridge(
                     } catch(e) {}
                 }
 
-                // Active ad blocking & skipping for mobile YouTube
+                // Active ad blocking & skipping for mobile YouTube (safe - never touches video.currentTime)
                 function skipAndBlockAds() {
                     try {
                         const skipBtns = document.querySelectorAll(
                             '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button.ytp-ad-skip-button-slot, [class*="skip-button"], .ytm-skip-ad-button'
                         );
                         skipBtns.forEach(function(b) {
-                            try { b.click(); } catch(e) {}
+                            try {
+                                if (b.offsetParent !== null || b.offsetWidth > 0 || b.offsetHeight > 0) {
+                                    b.click();
+                                }
+                            } catch(e) {}
                         });
 
                         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                        const isAd = (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')))
-                            || !!document.querySelector('.ad-showing, .ad-interrupting, .video-ads, .ytp-ad-player-overlay');
-
-                        if (isAd) {
-                            if (player && typeof player.skipAd === 'function') {
+                        if (player && typeof player.skipAd === 'function') {
+                            const isAd = (player.classList && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')))
+                                || (typeof player.getAdState === 'function' && player.getAdState() === 1);
+                            if (isAd) {
                                 try { player.skipAd(); } catch(e) {}
-                            }
-                            const video = document.querySelector('video');
-                            if (video) {
-                                video.muted = true;
-                                if (isFinite(video.duration) && video.duration > 0) {
-                                    video.currentTime = Math.max(0, video.duration - 0.05);
-                                }
-                                video.playbackRate = 16.0;
                             }
                         }
 
@@ -264,17 +269,17 @@ class VotWebBridge(
                             'ytm-companion-ad-renderer',
                             'ytm-ad-slot-renderer',
                             '.ad-container',
-                            '.video-ads',
-                            '.ytp-ad-overlay-container',
                             'ytm-mealbar-promo-renderer',
                             'ytm-promoted-video-renderer',
                             '.sparkles-light-cta',
                             '.standalone-collection-badge-renderer-icon'
                         ];
                         adSelectors.forEach(function(sel) {
-                            document.querySelectorAll(sel).forEach(function(el) {
-                                el.style.display = 'none';
-                            });
+                            try {
+                                document.querySelectorAll(sel).forEach(function(el) {
+                                    el.style.display = 'none';
+                                });
+                            } catch(e) {}
                         });
                     } catch(e) {}
                 }

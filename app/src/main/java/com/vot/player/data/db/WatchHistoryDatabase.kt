@@ -75,16 +75,23 @@ class WatchHistoryDatabase private constructor(context: Context) :
     suspend fun saveOrUpdate(item: WatchHistoryItem) = withContext(Dispatchers.IO) {
         val db = writableDatabase
         val existing = getHistoryItem(item.videoId)
-        val finalPosition = if (item.lastPositionMs > 0L) {
-            item.lastPositionMs
-        } else {
-            existing?.lastPositionMs ?: 0L
-        }
         val finalDuration = if (item.durationMs > 0L) {
             item.durationMs
         } else {
             existing?.durationMs ?: 0L
         }
+        val rawPosition = if (item.lastPositionMs > 0L) {
+            item.lastPositionMs
+        } else {
+            existing?.lastPositionMs ?: 0L
+        }
+        // If video is finished or within 10s of the end, reset position to 0 so it restarts smoothly next time
+        val finalPosition = if (finalDuration > 0L && (rawPosition >= finalDuration || (finalDuration - rawPosition) < 10_000L)) {
+            0L
+        } else {
+            rawPosition
+        }
+
         val values = ContentValues().apply {
             put(COL_VIDEO_ID, item.videoId)
             put(COL_URL, item.url)
@@ -103,13 +110,19 @@ class WatchHistoryDatabase private constructor(context: Context) :
     suspend fun updatePosition(videoId: String, positionMs: Long, durationMs: Long) = withContext(Dispatchers.IO) {
         val db = writableDatabase
         val existing = getHistoryItem(videoId)
+        val finalDur = if (durationMs > 0L) durationMs else (existing?.durationMs ?: 0L)
         // Guard against wiping out existing progress if user quickly enters and exits (< 3s)
-        val finalPos = if (positionMs < 3_000L && (existing?.lastPositionMs ?: 0L) > 10_000L) {
+        val calculatedPos = if (positionMs < 3_000L && (existing?.lastPositionMs ?: 0L) > 10_000L) {
             existing?.lastPositionMs ?: positionMs
         } else {
             positionMs
         }
-        val finalDur = if (durationMs > 0L) durationMs else (existing?.durationMs ?: 0L)
+        val finalPos = if (finalDur > 0L && (calculatedPos >= finalDur || (finalDur - calculatedPos) < 10_000L)) {
+            0L
+        } else {
+            calculatedPos
+        }
+
         val values = ContentValues().apply {
             put(COL_POSITION, finalPos)
             if (finalDur > 0) {
@@ -143,13 +156,16 @@ class WatchHistoryDatabase private constructor(context: Context) :
         )
         cursor.use {
             if (it.moveToFirst()) {
+                val rawPos = it.getLong(it.getColumnIndexOrThrow(COL_POSITION))
+                val dur = it.getLong(it.getColumnIndexOrThrow(COL_DURATION))
+                val normalizedPos = if (dur > 0L && (rawPos >= dur || (dur - rawPos) < 10_000L)) 0L else rawPos
                 return@withContext WatchHistoryItem(
                     videoId = it.getString(it.getColumnIndexOrThrow(COL_VIDEO_ID)),
                     url = it.getString(it.getColumnIndexOrThrow(COL_URL)),
                     title = it.getString(it.getColumnIndexOrThrow(COL_TITLE)),
                     thumbnailUrl = it.getString(it.getColumnIndexOrThrow(COL_THUMBNAIL)),
-                    lastPositionMs = it.getLong(it.getColumnIndexOrThrow(COL_POSITION)),
-                    durationMs = it.getLong(it.getColumnIndexOrThrow(COL_DURATION)),
+                    lastPositionMs = normalizedPos,
+                    durationMs = dur,
                     updatedAt = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED_AT)),
                     preferredVoice = it.getString(it.getColumnIndexOrThrow(COL_VOICE)),
                     originalVolume = it.getFloat(it.getColumnIndexOrThrow(COL_ORIG_VOL)),
@@ -175,14 +191,17 @@ class WatchHistoryDatabase private constructor(context: Context) :
         )
         cursor.use {
             while (it.moveToNext()) {
+                val rawPos = it.getLong(it.getColumnIndexOrThrow(COL_POSITION))
+                val dur = it.getLong(it.getColumnIndexOrThrow(COL_DURATION))
+                val normalizedPos = if (dur > 0L && (rawPos >= dur || (dur - rawPos) < 10_000L)) 0L else rawPos
                 items.add(
                     WatchHistoryItem(
                         videoId = it.getString(it.getColumnIndexOrThrow(COL_VIDEO_ID)),
                         url = it.getString(it.getColumnIndexOrThrow(COL_URL)),
                         title = it.getString(it.getColumnIndexOrThrow(COL_TITLE)),
                         thumbnailUrl = it.getString(it.getColumnIndexOrThrow(COL_THUMBNAIL)),
-                        lastPositionMs = it.getLong(it.getColumnIndexOrThrow(COL_POSITION)),
-                        durationMs = it.getLong(it.getColumnIndexOrThrow(COL_DURATION)),
+                        lastPositionMs = normalizedPos,
+                        durationMs = dur,
                         updatedAt = it.getLong(it.getColumnIndexOrThrow(COL_UPDATED_AT)),
                         preferredVoice = it.getString(it.getColumnIndexOrThrow(COL_VOICE)),
                         originalVolume = it.getFloat(it.getColumnIndexOrThrow(COL_ORIG_VOL)),

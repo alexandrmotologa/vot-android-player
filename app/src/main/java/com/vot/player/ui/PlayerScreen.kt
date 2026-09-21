@@ -27,9 +27,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -362,6 +365,14 @@ fun PlayerScreen(
                             addJavascriptInterface(bridge, VotWebBridge.INTERFACE_NAME)
 
                             webViewClient = object : WebViewClient() {
+                                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                    val url = request?.url?.toString().orEmpty()
+                                    if (VotWebBridge.isAdUrl(url)) {
+                                        return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                                    }
+                                    return super.shouldInterceptRequest(view, request)
+                                }
+
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     val cssInjection = """
@@ -372,6 +383,11 @@ fun PlayerScreen(
                                     view?.evaluateJavascript(cssInjection, null)
                                     view?.evaluateJavascript(VotWebBridge.INJECTION_SCRIPT, null)
                                     view?.evaluateJavascript("window.setOriginalVolume($originalVolume);", null)
+                                    val resumeMs = currentPositionMs
+                                    if (resumeMs > 0L) {
+                                        val startSec = resumeMs / 1000L
+                                        view?.evaluateJavascript("if (window.__vot_setInitialPosition) window.__vot_setInitialPosition($startSec);", null)
+                                    }
                                 }
                             }
 

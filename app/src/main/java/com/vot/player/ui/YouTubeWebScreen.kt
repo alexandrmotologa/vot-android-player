@@ -512,12 +512,5 @@ fun YouTubeWebScreen(
 }
 
 private fun isAdUrl(url: String): Boolean {
-    return url.contains("doubleclick.net") ||
-           url.contains("googleads.g.doubleclick.net") ||
-           url.contains("pagead2.googlesyndication.com") ||
-           url.contains("youtube.com/pagead/") ||
-           url.contains("youtube.com/api/stats/ads") ||
-           url.contains("youtube.com/get_midroll_info") ||
-           url.contains("youtube.com/ptracking") ||
-           url.contains("adservice.google.")
+    return VotWebBridge.isAdUrl(url)
 }
