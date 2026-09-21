@@ -21,6 +21,7 @@ import com.vot.player.data.extractor.MultiPlatformExtractor
 import com.vot.player.data.model.*
 import com.vot.player.data.pref.PlayerMode
 import com.vot.player.data.pref.PlayerPreferences
+import com.vot.player.data.pref.TranslationTriggerMode
 import com.vot.player.data.sponsorblock.SponsorBlockClient
 import com.vot.player.data.update.AppUpdateInfo
 import com.vot.player.data.update.UpdateChecker
@@ -43,6 +44,8 @@ import android.content.pm.ActivityInfo
 import android.widget.Toast
 import com.vot.player.ui.theme.DarkBackground
 import com.vot.player.ui.theme.VotPlayerTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
@@ -96,6 +99,11 @@ class MainActivity : ComponentActivity() {
     private var detectedClipboardUrl by mutableStateOf<String?>(null)
     private var dismissedClipboardUrl by mutableStateOf<String?>(null)
 
+    private var translationTriggerMode by mutableStateOf(TranslationTriggerMode.ALWAYS_AUTO)
+    private var autoSkipRussianVideos by mutableStateOf(true)
+    private var isTranslationActive by mutableStateOf(false)
+    private var showTranslationPrompt by mutableStateOf(false)
+
     override fun onResume() {
         super.onResume()
         checkClipboard()
@@ -126,6 +134,8 @@ class MainActivity : ComponentActivity() {
         preferredPlayerMode = prefs.preferredPlayerMode
         selectedVoiceType = prefs.preferredVoiceType
         selectedSubtitles = prefs.preferredSubtitlesMode
+        translationTriggerMode = prefs.translationTriggerMode
+        autoSkipRussianVideos = prefs.autoSkipRussianVideos
 
         playerManager = VotPlayerManager(
             context = this,
@@ -221,6 +231,8 @@ class MainActivity : ComponentActivity() {
                                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                     activeVideoUrl = null
                                     currentVideoInfo = null
+                                    isTranslationActive = false
+                                    showTranslationPrompt = false
                                     lifecycleScope.launch {
                                         loadHistory()
                                     }
@@ -230,6 +242,24 @@ class MainActivity : ComponentActivity() {
                                 hasRussianSubtitles = effectiveHasRussian,
                                 hasRomanianSubtitles = effectiveHasRomanian,
                                 hasEnglishSubtitles = effectiveHasEnglish,
+                                translationTriggerMode = translationTriggerMode,
+                                onTranslationTriggerModeChange = { mode ->
+                                    translationTriggerMode = mode
+                                    prefs.translationTriggerMode = mode
+                                },
+                                autoSkipRussianVideos = autoSkipRussianVideos,
+                                onAutoSkipRussianVideosChange = { skip ->
+                                    autoSkipRussianVideos = skip
+                                    prefs.autoSkipRussianVideos = skip
+                                },
+                                isTranslationActive = isTranslationActive,
+                                showTranslationPrompt = showTranslationPrompt,
+                                onTriggerTranslation = {
+                                    triggerCurrentVideoTranslation()
+                                },
+                                onDismissTranslationPrompt = {
+                                    showTranslationPrompt = false
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -298,6 +328,8 @@ class MainActivity : ComponentActivity() {
                                     requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                     activeVideoUrl = null
                                     currentVideoInfo = null
+                                    isTranslationActive = false
+                                    showTranslationPrompt = false
                                     lifecycleScope.launch {
                                         loadHistory()
                                     }
@@ -326,6 +358,24 @@ class MainActivity : ComponentActivity() {
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
                                 isCustomVoiceSupported = isCustomVoiceSupported,
+                                translationTriggerMode = translationTriggerMode,
+                                onTranslationTriggerModeChange = { mode ->
+                                    translationTriggerMode = mode
+                                    prefs.translationTriggerMode = mode
+                                },
+                                autoSkipRussianVideos = autoSkipRussianVideos,
+                                onAutoSkipRussianVideosChange = { skip ->
+                                    autoSkipRussianVideos = skip
+                                    prefs.autoSkipRussianVideos = skip
+                                },
+                                isTranslationActive = isTranslationActive,
+                                showTranslationPrompt = showTranslationPrompt,
+                                onTriggerTranslation = {
+                                    triggerCurrentVideoTranslation()
+                                },
+                                onDismissTranslationPrompt = {
+                                    showTranslationPrompt = false
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -442,6 +492,20 @@ class MainActivity : ComponentActivity() {
                             hasRomanianSubtitles = effectiveHasRomanian,
                             hasEnglishSubtitles = effectiveHasEnglish,
                             isCustomVoiceSupported = isCustomVoiceSupported,
+                            translationTriggerMode = translationTriggerMode,
+                            onTranslationTriggerModeChange = { mode ->
+                                translationTriggerMode = mode
+                                prefs.translationTriggerMode = mode
+                            },
+                            autoSkipRussianVideos = autoSkipRussianVideos,
+                            onAutoSkipRussianVideosChange = { skip ->
+                                autoSkipRussianVideos = skip
+                                prefs.autoSkipRussianVideos = skip
+                            },
+                            isTranslationActive = isTranslationActive,
+                            onTriggerTranslation = {
+                                triggerCurrentVideoTranslation()
+                            },
                             onDismiss = { showSettingsFromHome = false }
                         )
                     }
@@ -518,319 +582,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openYouTubeWebView(rawUrl: String, requestedStartPositionMs: Long = 0L) {
-        translationJob?.cancel()
-        playerManager.stopVideo()
-        playerManager.setMultiSubtitles(emptyList(), emptyList(), emptyList())
-        hasRussianSubtitles = false
-        hasRomanianSubtitles = false
-        hasEnglishSubtitles = false
-        hasSubtitles = false
-        currentTranslatedAudioUrl = null
+    private fun isLikelyRussianVideo(title: String, author: String = ""): Boolean {
+        val text = "$title $author"
+        val cyrillicCount = text.count { it in '\u0400'..'\u04FF' }
+        val latinCount = text.count { (it in 'a'..'z') || (it in 'A'..'Z') }
+        val totalLetters = cyrillicCount + latinCount
+        return cyrillicCount >= 3 && (totalLetters > 0 && cyrillicCount.toFloat() / totalLetters > 0.35f)
+    }
 
-        currentStartPositionMs = requestedStartPositionMs
-        val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl) ?: ""
-        val startSec = requestedStartPositionMs / 1000L
-        val webUrl = if (videoId.isNotEmpty()) {
-            if (startSec > 0) "https://m.youtube.com/watch?v=$videoId&t=${startSec}s"
-            else "https://m.youtube.com/watch?v=$videoId"
-        } else {
-            rawUrl
-        }
-        if (requestedStartPositionMs > 0L) {
-            playerManager.syncWebPosition(requestedStartPositionMs, 0L)
-        }
-
-        val info = UniversalVideoInfo(
-            id = videoId.ifEmpty { "yt_${rawUrl.hashCode()}" },
-            rawUrl = rawUrl,
-            title = "YouTube Video",
-            author = "YouTube",
-            durationSeconds = 0L,
-            streamUrl = webUrl,
-            thumbnailUrl = if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else null,
-            platform = PlatformType.YOUTUBE
-        )
-
-        currentPlayingMode = PlayerMode.YOUTUBE_WEB
-        currentVideoInfo = info
-        activeVideoUrl = rawUrl
-        isLoading = true
-        statusMessage = "Connecting to translation service..."
-
-        translationJob = lifecycleScope.launch {
-            val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
-            val votUrl = if (videoId.isNotEmpty()) "https://www.youtube.com/watch?v=$videoId" else rawUrl
-
-            if (isSponsorBlockEnabled && videoId.isNotEmpty()) {
-                launch {
-                    val segments = sponsorBlockClient.getSkipSegments(videoId)
-                    playerManager.setSponsorSegments(segments)
-                }
-            }
-
-            val subtitlesDeferred = async {
-                votApiClient.getMultiSubtitles(votUrl)
-            }
-
-            val votResult = votApiClient.translateVideo(
-                videoUrl = votUrl,
-                durationSeconds = 0.0,
-                targetLang = selectedLanguage,
-                voiceType = selectedVoiceType,
-                preferredVoice = preferredVoiceParam,
-                onProgress = { statusMessage = it }
-            )
-
-            val multiSubsResult = subtitlesDeferred.await()
-            val multiSubs = multiSubsResult.getOrNull()
-            val ruCues = multiSubs?.russianCues ?: emptyList()
-            val roCues = multiSubs?.romanianCues ?: emptyList()
-            val enCues = multiSubs?.englishCues ?: emptyList()
-            hasRussianSubtitles = ruCues.isNotEmpty()
-            hasRomanianSubtitles = roCues.isNotEmpty()
-            hasEnglishSubtitles = enCues.isNotEmpty()
-            hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
-            playerManager.setMultiSubtitles(ruCues, roCues, enCues)
-            playerManager.setSubtitlesMode(selectedSubtitles)
-
-            val audioUrl = votResult.getOrNull()?.url
-            currentTranslatedAudioUrl = audioUrl
-            val votObj = votResult.getOrNull()
-            if (votObj != null) {
-                if (votObj.message?.contains("обычная озвучка") == true) {
-                    isLiveVoiceAvailable = false
-                    if (selectedVoiceType == VoiceType.LIVE_VOICE) {
-                        selectedVoiceType = VoiceType.STANDARD
-                        prefs.preferredVoiceType = VoiceType.STANDARD
-                    }
-                } else {
-                    isLiveVoiceAvailable = true
-                }
-            }
-            isCustomVoiceSupported = false
-            isLoading = false
-            if (votResult.isSuccess) {
-                statusMessage = "Translation active (Russian)"
-                launch {
-                    delay(2500L)
-                    if (statusMessage == "Translation active (Russian)") {
-                        statusMessage = null
-                    }
-                }
-            } else {
-                statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
-            }
-
-            if (!audioUrl.isNullOrEmpty()) {
-                playerManager.setVoiceoverAudio(
-                    audioUrl = audioUrl,
-                    startPlaying = true,
-                    isInitialStart = (requestedStartPositionMs == 0L)
-                )
-            }
-
-            historyDb.saveOrUpdate(
-                WatchHistoryItem(
-                    videoId = info.id,
-                    url = rawUrl,
-                    title = info.title,
-                    thumbnailUrl = info.thumbnailUrl ?: "",
-                    lastPositionMs = requestedStartPositionMs,
-                    durationMs = 0L,
-                    preferredVoice = selectedVoiceType.name.lowercase(),
-                    originalVolume = playerManager.originalVolume.value,
-                    voiceVolume = playerManager.voiceoverVolume.value
-                )
-            )
-            loadHistory()
+    private fun fetchSubtitlesOnly(votUrl: String) {
+        lifecycleScope.launch {
+            try {
+                val subtitlesResult = votApiClient.getMultiSubtitles(votUrl)
+                val multiSubs = subtitlesResult.getOrNull()
+                val ruCues = multiSubs?.russianCues ?: emptyList()
+                val roCues = multiSubs?.romanianCues ?: emptyList()
+                val enCues = multiSubs?.englishCues ?: emptyList()
+                hasRussianSubtitles = ruCues.isNotEmpty()
+                hasRomanianSubtitles = roCues.isNotEmpty()
+                hasEnglishSubtitles = enCues.isNotEmpty()
+                hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
+                playerManager.setMultiSubtitles(ruCues, roCues, enCues)
+                playerManager.setSubtitlesMode(selectedSubtitles)
+            } catch (_: Exception) {}
         }
     }
 
-    private fun openNativePlayer(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+    private fun triggerVoiceoverTranslation(
+        votUrl: String,
+        durationSeconds: Double = 0.0,
+        isInitialStart: Boolean = false
+    ) {
         translationJob?.cancel()
-        currentPlayingMode = PlayerMode.NATIVE_PLAYER
-        activeVideoUrl = rawUrl
-        isLoading = true
-        statusMessage = "Resolving video stream..."
-        playerManager.setMultiSubtitles(emptyList(), emptyList(), emptyList())
-        hasRussianSubtitles = false
-        hasRomanianSubtitles = false
-        hasEnglishSubtitles = false
-        hasSubtitles = false
-        currentTranslatedAudioUrl = null
-
-        val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl)
-        if (videoId != null) {
-            currentVideoInfo = UniversalVideoInfo(
-                id = videoId,
-                rawUrl = rawUrl,
-                title = "YouTube Video",
-                author = "YouTube",
-                durationSeconds = 0L,
-                streamUrl = "",
-                thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                platform = PlatformType.YOUTUBE
-            )
-        }
-
         translationJob = lifecycleScope.launch {
-            val streamResult = streamExtractor.extract(rawUrl)
-            if (streamResult.isFailure) {
-                playerManager.stopVideo()
-                if (videoId != null) {
-                    val webUrl = "https://m.youtube.com/watch?v=$videoId"
-                    val fallbackInfo = UniversalVideoInfo(
-                        id = videoId,
-                        rawUrl = rawUrl,
-                        title = "YouTube Video",
-                        author = "YouTube",
-                        durationSeconds = 0L,
-                        streamUrl = webUrl,
-                        thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                        platform = PlatformType.YOUTUBE
-                    )
-                    currentVideoInfo = fallbackInfo
-                    statusMessage = "Requesting Russian voice-over translation..."
-
-                    if (isSponsorBlockEnabled) {
-                        launch {
-                            val segments = sponsorBlockClient.getSkipSegments(videoId)
-                            playerManager.setSponsorSegments(segments)
-                        }
-                    }
-
-                    val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
-                    val votUrl = "https://www.youtube.com/watch?v=$videoId"
-
-                    val subtitlesDeferred = async {
-                        votApiClient.getMultiSubtitles(votUrl)
-                    }
-
-                    val votResult = votApiClient.translateVideo(
-                        videoUrl = votUrl,
-                        durationSeconds = 0.0,
-                        targetLang = selectedLanguage,
-                        voiceType = selectedVoiceType,
-                        preferredVoice = preferredVoiceParam,
-                        onProgress = { statusMessage = it }
-                    )
-
-                    val multiSubsResult = subtitlesDeferred.await()
-                    val multiSubs = multiSubsResult.getOrNull()
-                    val ruCues = multiSubs?.russianCues ?: emptyList()
-                    val roCues = multiSubs?.romanianCues ?: emptyList()
-                    val enCues = multiSubs?.englishCues ?: emptyList()
-                    hasRussianSubtitles = ruCues.isNotEmpty()
-                    hasRomanianSubtitles = roCues.isNotEmpty()
-                    hasEnglishSubtitles = enCues.isNotEmpty()
-                    hasSubtitles = hasRussianSubtitles || hasRomanianSubtitles || hasEnglishSubtitles
-                    playerManager.setMultiSubtitles(ruCues, roCues, enCues)
-                    playerManager.setSubtitlesMode(selectedSubtitles)
-
-                    val resumePositionMs = if (requestedStartPositionMs > 0L) {
-                        requestedStartPositionMs
-                    } else {
-                        val existing = historyDb.getHistoryItem(fallbackInfo.id)
-                        val lastPos = existing?.lastPositionMs ?: 0L
-                        val dur = existing?.durationMs ?: 0L
-                        if (dur > 0L && (lastPos >= dur || (dur - lastPos) < 10_000L)) 0L else lastPos
-                    }
-                    if (resumePositionMs > 0L) {
-                        playerManager.syncWebPosition(resumePositionMs, 0L)
-                    }
-
-                    isLoading = false
-                    val translatedAudioUrl = votResult.getOrNull()?.url
-                    currentTranslatedAudioUrl = translatedAudioUrl
-                    val votObj = votResult.getOrNull()
-                    if (votObj != null) {
-                        if (votObj.message?.contains("обычная озвучка") == true) {
-                            isLiveVoiceAvailable = false
-                            if (selectedVoiceType == VoiceType.LIVE_VOICE) {
-                                selectedVoiceType = VoiceType.STANDARD
-                                prefs.preferredVoiceType = VoiceType.STANDARD
-                            }
-                        } else {
-                            isLiveVoiceAvailable = true
-                        }
-                    }
-                    isCustomVoiceSupported = false
-                    if (votResult.isSuccess) {
-                        statusMessage = "Translation active (Russian)"
-                        launch {
-                            delay(2500L)
-                            if (statusMessage == "Translation active (Russian)") {
-                                statusMessage = null
-                            }
-                        }
-                    } else {
-                        statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
-                    }
-
-                    if (!translatedAudioUrl.isNullOrEmpty()) {
-                        playerManager.setVoiceoverAudio(
-                            audioUrl = translatedAudioUrl,
-                            startPlaying = true,
-                            isInitialStart = (resumePositionMs == 0L)
-                        )
-                    }
-
-                    historyDb.saveOrUpdate(
-                        WatchHistoryItem(
-                            videoId = fallbackInfo.id,
-                            url = rawUrl,
-                            title = fallbackInfo.title,
-                            thumbnailUrl = fallbackInfo.thumbnailUrl ?: "",
-                            lastPositionMs = resumePositionMs,
-                            durationMs = 0L,
-                            preferredVoice = selectedVoiceType.name.lowercase(),
-                            originalVolume = playerManager.originalVolume.value,
-                            voiceVolume = playerManager.voiceoverVolume.value
-                        )
-                    )
-                    loadHistory()
-                    return@launch
-                }
-                isLoading = false
-                statusMessage = "Error: ${streamResult.exceptionOrNull()?.message}"
-                return@launch
-            }
-
-            val videoInfo = streamResult.getOrThrow()
-            currentVideoInfo = videoInfo
+            isLoading = true
             statusMessage = "Requesting Russian voice-over translation..."
-
-            if (isSponsorBlockEnabled && videoInfo.platform == PlatformType.YOUTUBE) {
-                launch {
-                    val segments = sponsorBlockClient.getSkipSegments(videoInfo.id)
-                    playerManager.setSponsorSegments(segments)
-                }
-            }
-
-            val resumePositionMs = if (requestedStartPositionMs > 0L) {
-                requestedStartPositionMs
-            } else {
-                val existing = historyDb.getHistoryItem(videoInfo.id)
-                val lastPos = existing?.lastPositionMs ?: 0L
-                val dur = existing?.durationMs ?: (videoInfo.durationSeconds * 1000L)
-                if (dur > 0L && (lastPos >= dur || (dur - lastPos) < 10_000L)) 0L else lastPos
-            }
-
-            // Start native video playback immediately with ExoPlayer
-            playerManager.prepare(
-                videoInfo = videoInfo,
-                voiceoverAudioUrl = null,
-                subtitles = emptyList(),
-                startPositionMs = resumePositionMs
-            )
-
             val preferredVoiceParam = selectedVoiceActor.voiceId.ifEmpty { selectedVoiceGender.code }
-            val votUrl = if (videoInfo.platform == PlatformType.YOUTUBE) {
-                "https://www.youtube.com/watch?v=${videoInfo.id}"
-            } else {
-                videoInfo.rawUrl
-            }
 
             val subtitlesDeferred = async {
                 votApiClient.getMultiSubtitles(votUrl)
@@ -838,7 +625,7 @@ class MainActivity : ComponentActivity() {
 
             val votResult = votApiClient.translateVideo(
                 videoUrl = votUrl,
-                durationSeconds = videoInfo.durationSeconds.toDouble(),
+                durationSeconds = durationSeconds,
                 targetLang = selectedLanguage,
                 voiceType = selectedVoiceType,
                 preferredVoice = preferredVoiceParam,
@@ -873,7 +660,9 @@ class MainActivity : ComponentActivity() {
             }
             isCustomVoiceSupported = false
             isLoading = false
-            if (votResult.isSuccess) {
+
+            if (votResult.isSuccess && !translatedAudioUrl.isNullOrEmpty()) {
+                isTranslationActive = true
                 statusMessage = "Translation active (Russian)"
                 launch {
                     delay(2500L)
@@ -881,9 +670,284 @@ class MainActivity : ComponentActivity() {
                         statusMessage = null
                     }
                 }
+                playerManager.setVoiceoverAudio(
+                    audioUrl = translatedAudioUrl,
+                    startPlaying = true,
+                    isInitialStart = isInitialStart
+                )
             } else {
+                isTranslationActive = false
                 statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
             }
+        }
+    }
+
+    private fun triggerCurrentVideoTranslation() {
+        val info = currentVideoInfo ?: return
+        val votUrl = if (info.platform == PlatformType.YOUTUBE) {
+            "https://www.youtube.com/watch?v=${info.id}"
+        } else {
+            info.rawUrl
+        }
+        showTranslationPrompt = false
+        val isInitial = playerManager.currentPositionMs.value == 0L
+        triggerVoiceoverTranslation(
+            votUrl = votUrl,
+            durationSeconds = info.durationSeconds.toDouble(),
+            isInitialStart = isInitial
+        )
+    }
+
+    private fun openYouTubeWebView(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+        translationJob?.cancel()
+        playerManager.stopVideo()
+        playerManager.setMultiSubtitles(emptyList(), emptyList(), emptyList())
+        hasRussianSubtitles = false
+        hasRomanianSubtitles = false
+        hasEnglishSubtitles = false
+        hasSubtitles = false
+        currentTranslatedAudioUrl = null
+        isTranslationActive = false
+        showTranslationPrompt = false
+
+        currentStartPositionMs = requestedStartPositionMs
+        val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl) ?: ""
+        val startSec = requestedStartPositionMs / 1000L
+        val webUrl = if (videoId.isNotEmpty()) {
+            if (startSec > 0) "https://m.youtube.com/watch?v=$videoId&t=${startSec}s"
+            else "https://m.youtube.com/watch?v=$videoId"
+        } else {
+            rawUrl
+        }
+        if (requestedStartPositionMs > 0L) {
+            playerManager.syncWebPosition(requestedStartPositionMs, 0L)
+        }
+
+        val info = UniversalVideoInfo(
+            id = videoId.ifEmpty { "yt_${rawUrl.hashCode()}" },
+            rawUrl = rawUrl,
+            title = "YouTube Video",
+            author = "YouTube",
+            durationSeconds = 0L,
+            streamUrl = webUrl,
+            thumbnailUrl = if (videoId.isNotEmpty()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else null,
+            platform = PlatformType.YOUTUBE
+        )
+
+        currentPlayingMode = PlayerMode.YOUTUBE_WEB
+        currentVideoInfo = info
+        activeVideoUrl = rawUrl
+        isLoading = false
+        statusMessage = null
+
+        val votUrl = if (videoId.isNotEmpty()) "https://www.youtube.com/watch?v=$videoId" else rawUrl
+
+        if (isSponsorBlockEnabled && videoId.isNotEmpty()) {
+            lifecycleScope.launch {
+                val segments = sponsorBlockClient.getSkipSegments(videoId)
+                playerManager.setSponsorSegments(segments)
+            }
+        }
+
+        lifecycleScope.launch {
+            historyDb.saveOrUpdate(
+                WatchHistoryItem(
+                    videoId = info.id,
+                    url = rawUrl,
+                    title = info.title,
+                    thumbnailUrl = info.thumbnailUrl ?: "",
+                    lastPositionMs = requestedStartPositionMs,
+                    durationMs = 0L,
+                    preferredVoice = selectedVoiceType.name.lowercase(),
+                    originalVolume = playerManager.originalVolume.value,
+                    voiceVolume = playerManager.voiceoverVolume.value
+                )
+            )
+            loadHistory()
+
+            val extracted = withContext(Dispatchers.IO) {
+                try { streamExtractor.extract(rawUrl).getOrNull() } catch (_: Exception) { null }
+            }
+            if (extracted != null) {
+                currentVideoInfo = extracted.copy(streamUrl = webUrl)
+            }
+            val checkTitle = currentVideoInfo?.title ?: ""
+            val checkAuthor = currentVideoInfo?.author ?: ""
+            val isRussian = isLikelyRussianVideo(checkTitle, checkAuthor)
+
+            if (autoSkipRussianVideos && isRussian) {
+                statusMessage = "Original is Russian (voiceover skipped)"
+                isTranslationActive = false
+                showTranslationPrompt = false
+                fetchSubtitlesOnly(votUrl)
+                launch {
+                    delay(3000L)
+                    if (statusMessage?.contains("Original is Russian") == true) {
+                        statusMessage = null
+                    }
+                }
+            } else when (translationTriggerMode) {
+                TranslationTriggerMode.ALWAYS_AUTO -> {
+                    triggerVoiceoverTranslation(
+                        votUrl = votUrl,
+                        durationSeconds = currentVideoInfo?.durationSeconds?.toDouble() ?: 0.0,
+                        isInitialStart = (requestedStartPositionMs == 0L)
+                    )
+                }
+                TranslationTriggerMode.ASK_EVERY_TIME -> {
+                    showTranslationPrompt = true
+                    fetchSubtitlesOnly(votUrl)
+                }
+                TranslationTriggerMode.MANUAL -> {
+                    showTranslationPrompt = false
+                    fetchSubtitlesOnly(votUrl)
+                }
+            }
+        }
+    }
+
+    private fun openNativePlayer(rawUrl: String, requestedStartPositionMs: Long = 0L) {
+        translationJob?.cancel()
+        currentPlayingMode = PlayerMode.NATIVE_PLAYER
+        activeVideoUrl = rawUrl
+        isLoading = true
+        statusMessage = "Resolving video stream..."
+        playerManager.setMultiSubtitles(emptyList(), emptyList(), emptyList())
+        hasRussianSubtitles = false
+        hasRomanianSubtitles = false
+        hasEnglishSubtitles = false
+        hasSubtitles = false
+        currentTranslatedAudioUrl = null
+        isTranslationActive = false
+        showTranslationPrompt = false
+
+        val videoId = YouTubeStreamExtractor.extractVideoId(rawUrl)
+        if (videoId != null) {
+            currentVideoInfo = UniversalVideoInfo(
+                id = videoId,
+                rawUrl = rawUrl,
+                title = "YouTube Video",
+                author = "YouTube",
+                durationSeconds = 0L,
+                streamUrl = "",
+                thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                platform = PlatformType.YOUTUBE
+            )
+        }
+
+        lifecycleScope.launch {
+            val streamResult = streamExtractor.extract(rawUrl)
+            if (streamResult.isFailure) {
+                playerManager.stopVideo()
+                if (videoId != null) {
+                    val webUrl = "https://m.youtube.com/watch?v=$videoId"
+                    val fallbackInfo = UniversalVideoInfo(
+                        id = videoId,
+                        rawUrl = rawUrl,
+                        title = "YouTube Video",
+                        author = "YouTube",
+                        durationSeconds = 0L,
+                        streamUrl = webUrl,
+                        thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                        platform = PlatformType.YOUTUBE
+                    )
+                    currentVideoInfo = fallbackInfo
+
+                    if (isSponsorBlockEnabled) {
+                        launch {
+                            val segments = sponsorBlockClient.getSkipSegments(videoId)
+                            playerManager.setSponsorSegments(segments)
+                        }
+                    }
+
+                    val votUrl = "https://www.youtube.com/watch?v=$videoId"
+                    val resumePositionMs = if (requestedStartPositionMs > 0L) {
+                        requestedStartPositionMs
+                    } else {
+                        val existing = historyDb.getHistoryItem(fallbackInfo.id)
+                        val lastPos = existing?.lastPositionMs ?: 0L
+                        val dur = existing?.durationMs ?: 0L
+                        if (dur > 0L && (lastPos >= dur || (dur - lastPos) < 10_000L)) 0L else lastPos
+                    }
+                    if (resumePositionMs > 0L) {
+                        playerManager.syncWebPosition(resumePositionMs, 0L)
+                    }
+
+                    historyDb.saveOrUpdate(
+                        WatchHistoryItem(
+                            videoId = fallbackInfo.id,
+                            url = rawUrl,
+                            title = fallbackInfo.title,
+                            thumbnailUrl = fallbackInfo.thumbnailUrl ?: "",
+                            lastPositionMs = resumePositionMs,
+                            durationMs = 0L,
+                            preferredVoice = selectedVoiceType.name.lowercase(),
+                            originalVolume = playerManager.originalVolume.value,
+                            voiceVolume = playerManager.voiceoverVolume.value
+                        )
+                    )
+                    loadHistory()
+
+                    val isRussian = isLikelyRussianVideo(fallbackInfo.title, fallbackInfo.author)
+                    if (autoSkipRussianVideos && isRussian) {
+                        statusMessage = "Original is Russian (voiceover skipped)"
+                        isTranslationActive = false
+                        showTranslationPrompt = false
+                        fetchSubtitlesOnly(votUrl)
+                        isLoading = false
+                    } else when (translationTriggerMode) {
+                        TranslationTriggerMode.ALWAYS_AUTO -> {
+                            triggerVoiceoverTranslation(
+                                votUrl = votUrl,
+                                durationSeconds = 0.0,
+                                isInitialStart = (resumePositionMs == 0L)
+                            )
+                        }
+                        TranslationTriggerMode.ASK_EVERY_TIME -> {
+                            isLoading = false
+                            showTranslationPrompt = true
+                            fetchSubtitlesOnly(votUrl)
+                        }
+                        TranslationTriggerMode.MANUAL -> {
+                            isLoading = false
+                            showTranslationPrompt = false
+                            fetchSubtitlesOnly(votUrl)
+                        }
+                    }
+                    return@launch
+                }
+                isLoading = false
+                statusMessage = "Error: ${streamResult.exceptionOrNull()?.message}"
+                return@launch
+            }
+
+            val videoInfo = streamResult.getOrThrow()
+            currentVideoInfo = videoInfo
+            isLoading = false
+
+            if (isSponsorBlockEnabled && videoInfo.platform == PlatformType.YOUTUBE) {
+                launch {
+                    val segments = sponsorBlockClient.getSkipSegments(videoInfo.id)
+                    playerManager.setSponsorSegments(segments)
+                }
+            }
+
+            val resumePositionMs = if (requestedStartPositionMs > 0L) {
+                requestedStartPositionMs
+            } else {
+                val existing = historyDb.getHistoryItem(videoInfo.id)
+                val lastPos = existing?.lastPositionMs ?: 0L
+                val dur = existing?.durationMs ?: (videoInfo.durationSeconds * 1000L)
+                if (dur > 0L && (lastPos >= dur || (dur - lastPos) < 10_000L)) 0L else lastPos
+            }
+
+            // Start native video playback immediately with ExoPlayer
+            playerManager.prepare(
+                videoInfo = videoInfo,
+                voiceoverAudioUrl = null,
+                subtitles = emptyList(),
+                startPositionMs = resumePositionMs
+            )
 
             val currentPos = playerManager.currentPositionMs.value.takeIf { it > 0L } ?: resumePositionMs
             historyDb.saveOrUpdate(
@@ -901,12 +965,40 @@ class MainActivity : ComponentActivity() {
             )
             loadHistory()
 
-            if (!translatedAudioUrl.isNullOrEmpty()) {
-                playerManager.setVoiceoverAudio(
-                    audioUrl = translatedAudioUrl,
-                    startPlaying = true,
-                    isInitialStart = (resumePositionMs == 0L)
-                )
+            val votUrl = if (videoInfo.platform == PlatformType.YOUTUBE) {
+                "https://www.youtube.com/watch?v=${videoInfo.id}"
+            } else {
+                videoInfo.rawUrl
+            }
+
+            val isRussian = isLikelyRussianVideo(videoInfo.title, videoInfo.author)
+            if (autoSkipRussianVideos && isRussian) {
+                statusMessage = "Original is Russian (voiceover skipped)"
+                isTranslationActive = false
+                showTranslationPrompt = false
+                fetchSubtitlesOnly(votUrl)
+                launch {
+                    delay(3000L)
+                    if (statusMessage?.contains("Original is Russian") == true) {
+                        statusMessage = null
+                    }
+                }
+            } else when (translationTriggerMode) {
+                TranslationTriggerMode.ALWAYS_AUTO -> {
+                    triggerVoiceoverTranslation(
+                        votUrl = votUrl,
+                        durationSeconds = videoInfo.durationSeconds.toDouble(),
+                        isInitialStart = (resumePositionMs == 0L)
+                    )
+                }
+                TranslationTriggerMode.ASK_EVERY_TIME -> {
+                    showTranslationPrompt = true
+                    fetchSubtitlesOnly(votUrl)
+                }
+                TranslationTriggerMode.MANUAL -> {
+                    showTranslationPrompt = false
+                    fetchSubtitlesOnly(votUrl)
+                }
             }
         }
     }

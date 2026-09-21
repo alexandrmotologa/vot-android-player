@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vot.player.data.model.*
 import com.vot.player.data.pref.PlayerMode
+import com.vot.player.data.pref.TranslationTriggerMode
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.DarkCard
 import com.vot.player.ui.theme.TextPrimary
@@ -61,6 +62,12 @@ fun SettingsBottomSheet(
     onToggleAudioOnly: () -> Unit = {},
     preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
     onPlayerModeChange: (PlayerMode) -> Unit = {},
+    translationTriggerMode: TranslationTriggerMode = TranslationTriggerMode.ALWAYS_AUTO,
+    onTranslationTriggerModeChange: (TranslationTriggerMode) -> Unit = {},
+    autoSkipRussianVideos: Boolean = true,
+    onAutoSkipRussianVideosChange: (Boolean) -> Unit = {},
+    isTranslationActive: Boolean = true,
+    onTriggerTranslation: () -> Unit = {},
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
     hasRussianSubtitles: Boolean = true,
@@ -208,6 +215,53 @@ fun SettingsBottomSheet(
             ) {
                 when (selectedCategory) {
                     SettingsCategory.AUDIO_VOICE -> {
+                        // Immediate Translate Action (if translation is currently not active)
+                        if (!isTranslationActive) {
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = AccentRed.copy(alpha = 0.15f)),
+                                border = BorderStroke(1.dp, AccentRed),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onTriggerTranslation()
+                                        onDismiss()
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.RecordVoiceOver,
+                                        contentDescription = null,
+                                        tint = AccentRed,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Translate Now to Russian",
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Tap to synthesize synchronized neural voice-over",
+                                            color = TextSecondary,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = AccentRed
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
                         // Optional Dual Volume Bar (when available, e.g., in Web View)
                         if (originalVolume != null && voiceoverVolume != null && onOriginalVolumeChange != null && onVoiceoverVolumeChange != null) {
                             SettingsCard(title = "Volume Levels", icon = Icons.AutoMirrored.Filled.VolumeUp) {
@@ -221,6 +275,63 @@ fun SettingsBottomSheet(
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                         }
+
+                        // Translation Trigger Mode & Russian Detection
+                        SettingsCard(title = "Translation Trigger", icon = Icons.Default.AutoAwesome) {
+                            Text(
+                                text = "How voice-over translation starts for videos:",
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TranslationTriggerMode.values().forEach { mode ->
+                                    FilterChip(
+                                        selected = translationTriggerMode == mode,
+                                        onClick = { onTranslationTriggerModeChange(mode) },
+                                        label = { Text(mode.displayName, fontSize = 12.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = AccentRed,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Skip videos already in Russian",
+                                        color = TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "Saves proxy quota and avoids dubbing over native Russian audio",
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = autoSkipRussianVideos,
+                                    onCheckedChange = { onAutoSkipRussianVideosChange(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = AccentRed
+                                    )
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Voice Synthesis Engine
                         SettingsCard(title = "Voice Synthesis Engine", icon = Icons.Default.Psychology) {

@@ -38,6 +38,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.vot.player.data.model.SubtitlesMode
 import com.vot.player.data.model.TargetLanguage
 import com.vot.player.data.model.VoiceType
+import com.vot.player.data.pref.TranslationTriggerMode
 import com.vot.player.player.VotPlayerManager
 import com.vot.player.ui.components.DualVolumeBar
 import com.vot.player.ui.components.SettingsBottomSheet
@@ -69,6 +70,14 @@ fun YouTubeWebScreen(
     onSwitchToNativePlayer: () -> Unit,
     onVideoUrlChanged: (String) -> Unit = {},
     onNavigateBack: () -> Unit,
+    translationTriggerMode: TranslationTriggerMode = TranslationTriggerMode.ALWAYS_AUTO,
+    onTranslationTriggerModeChange: (TranslationTriggerMode) -> Unit = {},
+    autoSkipRussianVideos: Boolean = true,
+    onAutoSkipRussianVideosChange: (Boolean) -> Unit = {},
+    isTranslationActive: Boolean = true,
+    showTranslationPrompt: Boolean = false,
+    onTriggerTranslation: () -> Unit = {},
+    onDismissTranslationPrompt: () -> Unit = {},
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
     hasRussianSubtitles: Boolean = true,
@@ -438,6 +447,60 @@ fun YouTubeWebScreen(
                 }
             }
 
+            // Floating Translation Prompt Banner
+            AnimatedVisibility(
+                visible = showTranslationPrompt,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xEE1E1E28),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.8f)),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RecordVoiceOver,
+                            contentDescription = null,
+                            tint = AccentRed,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Translate to Russian?",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Button(
+                            onClick = onTriggerTranslation,
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("Translate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        TextButton(
+                            onClick = onDismissTranslationPrompt,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("Keep Original", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
             // Subtitles Overlay
             val currentSubtitle by playerManager.currentSubtitle.collectAsState()
             SubtitleOverlay(
@@ -452,7 +515,12 @@ fun YouTubeWebScreen(
 
             // Floating VOT Controller Pill
             val isSynced = !currentTranslatedAudioUrl.isNullOrEmpty()
-            val pillColor = if (isSynced) Color(0xFF1B5E20) else AccentRed
+            val pillColor = when {
+                isSynced -> Color(0xFF1B5E20)
+                isLoading -> AccentRed
+                !isTranslationActive -> AccentRed
+                else -> Color(0xFF263238)
+            }
             Surface(
                 color = pillColor,
                 shape = RoundedCornerShape(20.dp),
@@ -462,7 +530,13 @@ fun YouTubeWebScreen(
                     .navigationBarsPadding()
                     .displayCutoutPadding()
                     .padding(16.dp)
-                    .clickable { showControlsSheet = true }
+                    .clickable {
+                        if (!isTranslationActive && !isSynced && !isLoading) {
+                            onTriggerTranslation()
+                        } else {
+                            showControlsSheet = true
+                        }
+                    }
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -482,7 +556,7 @@ fun YouTubeWebScreen(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
-                    } else if (!statusMessage.isNullOrEmpty()) {
+                    } else if (isLoading) {
                         CircularProgressIndicator(
                             color = Color.White,
                             strokeWidth = 2.dp,
@@ -490,21 +564,35 @@ fun YouTubeWebScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = statusMessage.take(24),
+                            text = statusMessage?.take(24) ?: "Translating...",
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
-                    } else {
+                    } else if (!isTranslationActive) {
                         Icon(
-                            imageVector = Icons.Default.GraphicEq,
+                            imageVector = Icons.Default.RecordVoiceOver,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "VOT Active",
+                            text = "Translate (RU)",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "VOT Controls",
                             color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
@@ -548,6 +636,15 @@ fun YouTubeWebScreen(
                 onSwitchToNativePlayer = {
                     showControlsSheet = false
                     onSwitchToNativePlayer()
+                },
+                translationTriggerMode = translationTriggerMode,
+                onTranslationTriggerModeChange = onTranslationTriggerModeChange,
+                autoSkipRussianVideos = autoSkipRussianVideos,
+                onAutoSkipRussianVideosChange = onAutoSkipRussianVideosChange,
+                isTranslationActive = isTranslationActive,
+                onTriggerTranslation = {
+                    showControlsSheet = false
+                    onTriggerTranslation()
                 },
                 onDismiss = { showControlsSheet = false }
             )

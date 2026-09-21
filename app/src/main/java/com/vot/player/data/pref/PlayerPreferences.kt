@@ -11,6 +11,12 @@ enum class PlayerMode(val displayName: String, val description: String) {
     YOUTUBE_WEB("YouTube Web View", "Full YouTube interface with comments, likes and account sign-in")
 }
 
+enum class TranslationTriggerMode(val displayName: String, val description: String) {
+    ALWAYS_AUTO("Automatic (Recommended)", "Always translate video as soon as it opens"),
+    ASK_EVERY_TIME("Ask every time", "Prompt before requesting voice-over translation"),
+    MANUAL("Manual only", "Play in original audio; translate only when tapped")
+}
+
 class PlayerPreferences(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("vot_player_prefs", Context.MODE_PRIVATE)
 
@@ -22,6 +28,8 @@ class PlayerPreferences(context: Context) {
         private const val KEY_AUDIO_ONLY = "pref_audio_only"
         private const val KEY_VOICE_GENDER = "pref_voice_gender"
         private const val KEY_VOICE_ACTOR = "pref_voice_actor"
+        private const val KEY_TRANSLATION_TRIGGER = "pref_translation_trigger"
+        private const val KEY_SKIP_RUSSIAN = "pref_skip_russian"
 
         @Volatile
         private var instance: PlayerPreferences? = null
@@ -87,4 +95,21 @@ class PlayerPreferences(context: Context) {
     var preferredVoiceActor: String
         get() = prefs.getString(KEY_VOICE_ACTOR, "") ?: ""
         set(value) = prefs.edit().putString(KEY_VOICE_ACTOR, value).apply()
+
+    var translationTriggerMode: TranslationTriggerMode
+        get() {
+            val name = prefs.getString(KEY_TRANSLATION_TRIGGER, TranslationTriggerMode.ALWAYS_AUTO.name)
+            return try {
+                TranslationTriggerMode.valueOf(name ?: TranslationTriggerMode.ALWAYS_AUTO.name)
+            } catch (_: Exception) {
+                TranslationTriggerMode.ALWAYS_AUTO
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_TRANSLATION_TRIGGER, value.name).commit()
+        }
+
+    var autoSkipRussianVideos: Boolean
+        get() = prefs.getBoolean(KEY_SKIP_RUSSIAN, true)
+        set(value) = prefs.edit().putBoolean(KEY_SKIP_RUSSIAN, value).apply()
 }

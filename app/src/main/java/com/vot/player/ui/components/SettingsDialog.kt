@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.vot.player.data.model.*
 import com.vot.player.data.pref.PlayerMode
+import com.vot.player.data.pref.TranslationTriggerMode
 import com.vot.player.ui.theme.AccentRed
 import com.vot.player.ui.theme.DarkCard
 import com.vot.player.ui.theme.TextPrimary
@@ -50,6 +51,12 @@ fun SettingsDialog(
     onToggleAudioOnly: () -> Unit = {},
     preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
     onPlayerModeChange: (PlayerMode) -> Unit = {},
+    translationTriggerMode: TranslationTriggerMode = TranslationTriggerMode.ALWAYS_AUTO,
+    onTranslationTriggerModeChange: (TranslationTriggerMode) -> Unit = {},
+    autoSkipRussianVideos: Boolean = true,
+    onAutoSkipRussianVideosChange: (Boolean) -> Unit = {},
+    isTranslationActive: Boolean = true,
+    onTriggerTranslation: () -> Unit = {},
     isLiveVoiceAvailable: Boolean = true,
     hasSubtitles: Boolean = true,
     hasRussianSubtitles: Boolean = true,
@@ -82,6 +89,12 @@ fun SettingsDialog(
         onToggleAudioOnly = onToggleAudioOnly,
         preferredPlayerMode = preferredPlayerMode,
         onPlayerModeChange = onPlayerModeChange,
+        translationTriggerMode = translationTriggerMode,
+        onTranslationTriggerModeChange = onTranslationTriggerModeChange,
+        autoSkipRussianVideos = autoSkipRussianVideos,
+        onAutoSkipRussianVideosChange = onAutoSkipRussianVideosChange,
+        isTranslationActive = isTranslationActive,
+        onTriggerTranslation = onTriggerTranslation,
         isLiveVoiceAvailable = isLiveVoiceAvailable,
         hasSubtitles = hasSubtitles,
         hasRussianSubtitles = hasRussianSubtitles,

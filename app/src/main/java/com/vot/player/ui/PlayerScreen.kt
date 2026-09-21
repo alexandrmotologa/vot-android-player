@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -43,6 +44,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.vot.player.data.model.*
 import com.vot.player.data.pref.PlayerMode
+import com.vot.player.data.pref.TranslationTriggerMode
 import com.vot.player.player.VotPlayerManager
 import com.vot.player.ui.components.DualVolumeBar
 import com.vot.player.ui.components.GestureOverlay
@@ -79,6 +81,14 @@ fun PlayerScreen(
     onSponsorBlockChange: (Boolean) -> Unit = {},
     preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
     onPlayerModeChange: (PlayerMode) -> Unit = {},
+    translationTriggerMode: TranslationTriggerMode = TranslationTriggerMode.ALWAYS_AUTO,
+    onTranslationTriggerModeChange: (TranslationTriggerMode) -> Unit = {},
+    autoSkipRussianVideos: Boolean = true,
+    onAutoSkipRussianVideosChange: (Boolean) -> Unit = {},
+    isTranslationActive: Boolean = true,
+    showTranslationPrompt: Boolean = false,
+    onTriggerTranslation: () -> Unit = {},
+    onDismissTranslationPrompt: () -> Unit = {},
     onEnterPiP: () -> Unit,
     onNavigateBack: () -> Unit,
     onExportVideo: () -> Unit,
@@ -548,6 +558,35 @@ fun PlayerScreen(
                         )
                     }
 
+                    if (!isTranslationActive) {
+                        Surface(
+                            color = AccentRed,
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .clickable { onTriggerTranslation() }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.RecordVoiceOver,
+                                    contentDescription = "Translate",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Translate (RU)",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -606,6 +645,61 @@ fun PlayerScreen(
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
+                        }
+                    }
+                }
+
+                // Floating Translation Prompt Banner
+                AnimatedVisibility(
+                    visible = showTranslationPrompt,
+                    enter = fadeIn() + slideInVertically { -it },
+                    exit = fadeOut() + slideOutVertically { -it },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = if (isLandscape) 48.dp else 64.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color(0xEE1E1E28),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.8f)),
+                        shadowElevation = 8.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = AccentRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Translate to Russian?",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Button(
+                                onClick = onTriggerTranslation,
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("Translate", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(
+                                onClick = onDismissTranslationPrompt,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("Keep Original", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -831,6 +925,12 @@ fun PlayerScreen(
                 onToggleAudioOnly = { playerManager.toggleAudioOnly() },
                 preferredPlayerMode = preferredPlayerMode,
                 onPlayerModeChange = onPlayerModeChange,
+                translationTriggerMode = translationTriggerMode,
+                onTranslationTriggerModeChange = onTranslationTriggerModeChange,
+                autoSkipRussianVideos = autoSkipRussianVideos,
+                onAutoSkipRussianVideosChange = onAutoSkipRussianVideosChange,
+                isTranslationActive = isTranslationActive,
+                onTriggerTranslation = onTriggerTranslation,
                 onExportVideoClick = onExportVideo,
                 onExportAudioClick = onExportAudio,
                 isLiveVoiceAvailable = isLiveVoiceAvailable,
