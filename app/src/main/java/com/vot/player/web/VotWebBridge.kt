@@ -74,7 +74,15 @@ class VotWebBridge(
             .ad-interrupting .ytp-ad-module,
             [aria-label*="unmute" i],
             [aria-label*="Unmute" i],
-            .ytp-button[aria-label*="unmute" i] {
+            .ytp-button[aria-label*="unmute" i],
+            .ytp-caption-window-container,
+            .caption-window,
+            .ytp-caption-segment,
+            .ytm-caption-window,
+            div[class*="caption-window"],
+            .ytp-caption-window-rollup,
+            .ytp-caption-window-bottom,
+            .ytp-caption-window-top {
                 display: none !important;
                 pointer-events: none !important;
                 opacity: 0 !important;
@@ -108,7 +116,7 @@ class VotWebBridge(
                 if (window.__vot_bridge_installed) return;
                 window.__vot_bridge_installed = true;
 
-                window.__vot_original_volume = 0.0;
+                window.__vot_original_volume = 0.20;
                 window.__vot_seeking_until = 0;
 
                 // Prune YouTube ad placements from initial player response so midroll cue-points are never scheduled
@@ -141,8 +149,26 @@ class VotWebBridge(
                     const origFetch = window.fetch;
                     window.fetch = function() {
                         const url = arguments[0];
-                        if (typeof url === 'string' && (url.includes('/youtubei/v1/player/ad_break') || url.includes('/get_midroll_info') || url.includes('doubleclick.net'))) {
-                            return Promise.resolve(new Response('{}', { status: 200 }));
+                        if (typeof url === 'string') {
+                            if (url.includes('/youtubei/v1/player/ad_break') || url.includes('/get_midroll_info') || url.includes('doubleclick.net')) {
+                                return Promise.resolve(new Response('{}', { status: 200 }));
+                            }
+                            if (url.includes('/youtubei/v1/player') && !url.includes('/ad_break')) {
+                                return origFetch.apply(this, arguments).then(async function(res) {
+                                    try {
+                                        const clone = res.clone();
+                                        const data = await clone.json();
+                                        pruneAdConfig(data);
+                                        return new Response(JSON.stringify(data), {
+                                            status: res.status,
+                                            statusText: res.statusText,
+                                            headers: res.headers
+                                        });
+                                    } catch(e) {
+                                        return res;
+                                    }
+                                });
+                            }
                         }
                         return origFetch.apply(this, arguments);
                     };
@@ -281,7 +307,18 @@ class VotWebBridge(
 
                 // Periodic time & duration sync (every 500ms) to ensure duration & position never get out of sync
                 let captionsFetched = false;
+                function disableNativeCaptions() {
+                    try {
+                        const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (p) {
+                            if (typeof p.unloadModule === 'function') p.unloadModule('captions');
+                            if (typeof p.setOption === 'function') p.setOption('captions', 'track', {});
+                        }
+                    } catch(e) {}
+                }
+
                 function checkAndFetchCaptions() {
+                    disableNativeCaptions();
                     if (captionsFetched) return;
                     try {
                         const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
@@ -294,7 +331,13 @@ class VotWebBridge(
                                 if (track && track.baseUrl) {
                                     captionsFetched = true;
                                     let cUrl = track.baseUrl;
-                                    if (!cUrl.includes('fmt=')) cUrl += '&fmt=json3';
+                                    const isRu = (track.languageCode === 'ru') || (track.vssId && track.vssId.includes('.ru'));
+                                    if (!isRu && !cUrl.includes('tlang=')) {
+                                        cUrl += '&tlang=ru';
+                                    }
+                                    if (!cUrl.includes('fmt=')) {
+                                        cUrl += '&fmt=json3';
+                                    }
                                     fetch(cUrl)
                                         .then(r => r.text())
                                         .then(txt => {
@@ -319,6 +362,11 @@ class VotWebBridge(
                             const video = document.querySelector('video');
                             if (video) {
                                 video.muted = true;
+                                try {
+                                    if (video.duration && isFinite(video.duration)) {
+                                        video.currentTime = video.duration;
+                                    }
+                                } catch(e) {}
                             }
 
                             const skipBtns = document.querySelectorAll(

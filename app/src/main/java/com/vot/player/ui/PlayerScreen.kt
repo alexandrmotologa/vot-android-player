@@ -96,6 +96,8 @@ fun PlayerScreen(
     val availableQualities by playerManager.availableQualities.collectAsState()
     val selectedQuality by playerManager.selectedQuality.collectAsState()
     val isAudioOnly by playerManager.isAudioOnly.collectAsState()
+    val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
+    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -742,7 +744,7 @@ fun PlayerScreen(
                 onExportVideoClick = onExportVideo,
                 onExportAudioClick = onExportAudio,
                 isLiveVoiceAvailable = isLiveVoiceAvailable,
-                hasSubtitles = hasSubtitles,
+                hasSubtitles = effectiveHasSubtitles,
                 isCustomVoiceSupported = isCustomVoiceSupported,
                 onDismiss = { showSettingsDialog = false }
             )

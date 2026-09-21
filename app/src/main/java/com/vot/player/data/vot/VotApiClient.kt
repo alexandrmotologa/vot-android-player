@@ -399,13 +399,21 @@ class VotApiClient(
                         }
                     }
                     if (selectedUrl.isNotEmpty()) {
+                        var finalUrl = selectedUrl
+                        if (!isDirectTargetLang && !finalUrl.contains("tlang=")) {
+                            finalUrl += "&tlang=${targetLang.code}"
+                        }
+                        if (!finalUrl.contains("fmt=")) {
+                            finalUrl += "&fmt=json3"
+                        }
                         val subReq = Request.Builder()
-                            .url(selectedUrl)
+                            .url(finalUrl)
                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                             .build()
                         val subResp = okHttpClient.newCall(subReq).execute()
                         if (subResp.isSuccessful) {
                             rawXmlOrJson = subResp.body?.string() ?: ""
+                            isDirectTargetLang = true
                         }
                     }
                 }
@@ -444,13 +452,21 @@ class VotApiClient(
                             chosenUrl = capTracks.getJSONObject(0).optString("baseUrl", "")
                         }
                         if (chosenUrl.isNotEmpty()) {
+                            var finalUrl = chosenUrl
+                            if (!isDirectTargetLang && !finalUrl.contains("tlang=")) {
+                                finalUrl += "&tlang=${targetLang.code}"
+                            }
+                            if (!finalUrl.contains("fmt=")) {
+                                finalUrl += "&fmt=json3"
+                            }
                             val trackReq = Request.Builder()
-                                .url(chosenUrl)
+                                .url(finalUrl)
                                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                                 .build()
                             val trackResp = okHttpClient.newCall(trackReq).execute()
                             if (trackResp.isSuccessful) {
                                 rawXmlOrJson = trackResp.body?.string() ?: ""
+                                isDirectTargetLang = true
                             }
                         }
                     }

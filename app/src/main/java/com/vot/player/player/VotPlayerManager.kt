@@ -50,11 +50,14 @@ class VotPlayerManager(
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
-    private val _originalVolume = MutableStateFlow(0.0f)
+    private val _originalVolume = MutableStateFlow(0.20f)
     val originalVolume: StateFlow<Float> = _originalVolume.asStateFlow()
 
     private val _voiceoverVolume = MutableStateFlow(1.0f)
     val voiceoverVolume: StateFlow<Float> = _voiceoverVolume.asStateFlow()
+
+    private val _hasSubtitles = MutableStateFlow(false)
+    val hasSubtitles: StateFlow<Boolean> = _hasSubtitles.asStateFlow()
 
     private val _playbackSpeed = MutableStateFlow(1.0f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
@@ -181,6 +184,7 @@ class VotPlayerManager(
         currentVideoInfo = videoInfo
         currentVoiceoverAudioUrl = voiceoverAudioUrl
         subtitleCues = subtitles
+        _hasSubtitles.value = subtitles.isNotEmpty()
         _availableQualities.value = videoInfo.availableQualities
         if (videoInfo.durationSeconds > 0L) {
             _durationMs.value = videoInfo.durationSeconds * 1000L
@@ -335,6 +339,9 @@ class VotPlayerManager(
         videoPlayer.clearMediaItems()
         voiceoverPlayer.stop()
         voiceoverPlayer.clearMediaItems()
+        subtitleCues = emptyList()
+        _hasSubtitles.value = false
+        _currentSubtitle.value = null
         setPlaybackSpeed(1.0f)
     }
 
@@ -443,6 +450,7 @@ class VotPlayerManager(
 
     fun setSubtitles(cues: List<SubtitleCue>) {
         subtitleCues = cues
+        _hasSubtitles.value = cues.isNotEmpty()
         updateSubtitles(_currentPositionMs.value)
     }
 

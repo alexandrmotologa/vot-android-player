@@ -144,6 +144,8 @@ class MainActivity : ComponentActivity() {
                 var showExportDialog by remember { mutableStateOf(false) }
                 var showUpdateDialog by remember { mutableStateOf(false) }
                 var updateDownloadState by remember { mutableStateOf<UpdateDownloadState>(UpdateDownloadState.Idle) }
+                val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
+                val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles
 
                 LaunchedEffect(exportState) {
                     if (exportState !is ExportState.Idle) {
@@ -209,7 +211,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
-                                hasSubtitles = hasSubtitles,
+                                hasSubtitles = effectiveHasSubtitles,
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -301,7 +303,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 isLiveVoiceAvailable = isLiveVoiceAvailable,
-                                hasSubtitles = hasSubtitles,
+                                hasSubtitles = effectiveHasSubtitles,
                                 isCustomVoiceSupported = isCustomVoiceSupported,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -414,7 +416,7 @@ class MainActivity : ComponentActivity() {
                                 prefs.preferredPlayerMode = mode
                             },
                             isLiveVoiceAvailable = isLiveVoiceAvailable,
-                            hasSubtitles = hasSubtitles,
+                            hasSubtitles = effectiveHasSubtitles,
                             isCustomVoiceSupported = isCustomVoiceSupported,
                             onDismiss = { showSettingsFromHome = false }
                         )

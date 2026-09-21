@@ -73,6 +73,8 @@ fun YouTubeWebScreen(
 
     val originalVolume by playerManager.originalVolume.collectAsState()
     val voiceoverVolume by playerManager.voiceoverVolume.collectAsState()
+    val managerHasSubtitles by playerManager.hasSubtitles.collectAsState()
+    val effectiveHasSubtitles = hasSubtitles || managerHasSubtitles
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -272,9 +274,19 @@ fun YouTubeWebScreen(
                                         ytm-companion-ad-renderer,
                                         ytm-ad-slot-renderer,
                                         .ad-container,
-                                        ytm-mealbar-promo-renderer {
+                                        ytm-mealbar-promo-renderer,
+                                        .ytp-caption-window-container,
+                                        .caption-window,
+                                        .ytp-caption-segment,
+                                        .ytm-caption-window,
+                                        div[class*="caption-window"],
+                                        .ytp-caption-window-rollup,
+                                        .ytp-caption-window-bottom,
+                                        .ytp-caption-window-top {
                                             display: none !important;
                                             opacity: 0 !important;
+                                            visibility: hidden !important;
+                                            pointer-events: none !important;
                                         }
                                     `;
                                     document.head.appendChild(style);
@@ -484,7 +496,7 @@ fun YouTubeWebScreen(
 
                     // Subtitles Controls
                     Text(text = "Subtitles", color = TextSecondary, fontSize = 13.sp)
-                    if (!hasSubtitles) {
+                    if (!effectiveHasSubtitles) {
                         Text(
                             text = "Notice: Subtitles are not available for this video",
                             color = Color(0xFFE5A93C),
@@ -498,7 +510,7 @@ fun YouTubeWebScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         SubtitlesMode.values().forEach { sub ->
-                            val isEnabled = sub == SubtitlesMode.OFF || hasSubtitles
+                            val isEnabled = sub == SubtitlesMode.OFF || effectiveHasSubtitles
                             FilterChip(
                                 selected = selectedSubtitles == sub,
                                 onClick = { if (isEnabled) onSubtitlesChange(sub) },
