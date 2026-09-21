@@ -95,7 +95,12 @@ class VotWebBridge(
                    url.contains("youtube.com/ptracking") ||
                    url.contains("adservice.google.") ||
                    url.contains("pubads.g.doubleclick.net") ||
-                   url.contains("securepubads.g.doubleclick.net")
+                   url.contains("securepubads.g.doubleclick.net") ||
+                   url.contains("/ad_break") ||
+                   url.contains("/get_midroll_") ||
+                   url.contains("youtube.com/api/stats/qoe") ||
+                   url.contains("youtube.com/api/stats/atr") ||
+                   url.contains("youtube.com/api/stats/watchtime")
         }
 
         val INJECTION_SCRIPT = """
@@ -106,11 +111,47 @@ class VotWebBridge(
                 window.__vot_original_volume = 0.0;
                 window.__vot_seeking_until = 0;
 
+                // Prune YouTube ad placements from initial player response so midroll cue-points are never scheduled
+                function pruneAdConfig(obj) {
+                    if (!obj || typeof obj !== 'object') return;
+                    try {
+                        if (obj.adPlacements) delete obj.adPlacements;
+                        if (obj.playerAds) delete obj.playerAds;
+                        if (obj.adSlots) delete obj.adSlots;
+                        if (obj.interstitials) delete obj.interstitials;
+                    } catch(e) {}
+                }
+
+                try {
+                    if (window.ytInitialPlayerResponse) {
+                        pruneAdConfig(window.ytInitialPlayerResponse);
+                    }
+                    let _pr = window.ytInitialPlayerResponse;
+                    Object.defineProperty(window, 'ytInitialPlayerResponse', {
+                        get: function() { return _pr; },
+                        set: function(val) {
+                            pruneAdConfig(val);
+                            _pr = val;
+                        },
+                        configurable: true
+                    });
+                } catch(e) {}
+
+                try {
+                    const origFetch = window.fetch;
+                    window.fetch = function() {
+                        const url = arguments[0];
+                        if (typeof url === 'string' && (url.includes('/youtubei/v1/player/ad_break') || url.includes('/get_midroll_info') || url.includes('doubleclick.net'))) {
+                            return Promise.resolve(new Response('{}', { status: 200 }));
+                        }
+                        return origFetch.apply(this, arguments);
+                    };
+                } catch(e) {}
+
                 function isAdActive() {
                     const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                     if (p && p.classList && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) return true;
                     if (p && typeof p.getAdState === 'function' && p.getAdState() === 1) return true;
-                    if (document.querySelector('.ad-showing, .ad-interrupting')) return true;
                     return false;
                 }
 
@@ -137,13 +178,14 @@ class VotWebBridge(
                     window.VotAndroidBridge.onVideoTimeUpdate(posMs, durMs);
                 }
 
-                // Dedicated seek handler that interacts with YouTube's player API and HTML5 video
+                // Dedicated seek handler that interacts with YouTube's player API and HTML5 video safely
                 window.__vot_seekTo = function(sec) {
                     window.__vot_seeking_until = Date.now() + 1500; // block timeupdate for 1500ms during seek buffer
                     try {
                         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                         if (player && typeof player.seekTo === 'function') {
                             player.seekTo(sec, true);
+                            return; // Success: Let YouTube manage Dash chunks without concurrent video.currentTime conflict!
                         }
                     } catch(e) {}
                     try {
@@ -152,10 +194,6 @@ class VotWebBridge(
                             video.currentTime = sec;
                         }
                     } catch(e) {}
-                    setTimeout(skipAndBlockAds, 40);
-                    setTimeout(skipAndBlockAds, 120);
-                    setTimeout(skipAndBlockAds, 250);
-                    setTimeout(skipAndBlockAds, 500);
                 };
 
                 window.__vot_play = function() {
@@ -226,7 +264,10 @@ class VotWebBridge(
 
                 document.addEventListener('ratechange', function(e) {
                     if (e.target && (e.target.tagName === 'VIDEO' || e.target.nodeName === 'VIDEO')) {
-                        if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoRateChange(e.target.playbackRate);
+                        const r = e.target.playbackRate;
+                        if (r >= 0.25 && r <= 2.0) {
+                            if (window.VotAndroidBridge) window.VotAndroidBridge.onVideoRateChange(r);
+                        }
                     }
                 }, true);
 
@@ -268,7 +309,7 @@ class VotWebBridge(
                     } catch(e) {}
                 }
 
-                // Active ad blocking & skipping for mobile YouTube
+                // Active ad blocking & skipping for mobile YouTube (clean, safe, non-destructive)
                 function skipAndBlockAds() {
                     try {
                         const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
@@ -278,10 +319,6 @@ class VotWebBridge(
                             const video = document.querySelector('video');
                             if (video) {
                                 video.muted = true;
-                                video.playbackRate = 16.0;
-                                if (isFinite(video.duration) && video.duration > 0) {
-                                    video.currentTime = video.duration;
-                                }
                             }
 
                             const skipBtns = document.querySelectorAll(
@@ -298,12 +335,12 @@ class VotWebBridge(
                             if (player && typeof player.skipAd === 'function') {
                                 try { player.skipAd(); } catch(e) {}
                             }
-                        } else {
-                            // Restore normal speed if it was accelerated by ad skipper
-                            const video = document.querySelector('video');
-                            if (video && video.playbackRate > 2.0) {
-                                video.playbackRate = 1.0;
-                            }
+                        }
+
+                        // Restore normal speed if it was skewed outside safe bounds
+                        const video = document.querySelector('video');
+                        if (video && (video.playbackRate > 2.0 || video.playbackRate < 0.25)) {
+                            video.playbackRate = 1.0;
                         }
 
                         const adSelectors = [

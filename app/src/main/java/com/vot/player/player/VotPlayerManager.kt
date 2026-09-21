@@ -258,7 +258,7 @@ class VotPlayerManager(
         if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {
             val aPos = voiceoverPlayer.currentPosition
             val delta = kotlin.math.abs(webPositionMs - aPos)
-            if (delta > 300) {
+            if (delta > 600) {
                 voiceoverPlayer.seekTo(webPositionMs)
             }
             if (!_isPlaying.value && voiceoverPlayer.isPlaying) {
@@ -335,6 +335,7 @@ class VotPlayerManager(
         videoPlayer.clearMediaItems()
         voiceoverPlayer.stop()
         voiceoverPlayer.clearMediaItems()
+        setPlaybackSpeed(1.0f)
     }
 
     fun play() {
@@ -432,11 +433,12 @@ class VotPlayerManager(
     }
 
     fun setPlaybackSpeed(speed: Float) {
-        _playbackSpeed.value = speed
-        val params = PlaybackParameters(speed)
+        val clamped = speed.coerceIn(0.25f, 2.0f)
+        _playbackSpeed.value = clamped
+        val params = PlaybackParameters(clamped)
         videoPlayer.playbackParameters = params
         voiceoverPlayer.playbackParameters = params
-        webVideoController?.setPlaybackSpeed(speed)
+        webVideoController?.setPlaybackSpeed(clamped)
     }
 
     fun setSubtitles(cues: List<SubtitleCue>) {
