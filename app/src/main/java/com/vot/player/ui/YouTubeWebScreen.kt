@@ -575,15 +575,28 @@ fun YouTubeWebScreen(
 
             // Subtitles Overlay
             val currentSubtitle by playerManager.currentSubtitle.collectAsState()
-            SubtitleOverlay(
-                subtitleText = currentSubtitle,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .fillMaxSize()
                     .navigationBarsPadding()
-                    .displayCutoutPadding()
-                    .padding(bottom = if (isLandscape) 40.dp else 90.dp)
-                    .padding(horizontal = 20.dp)
-            )
+                    .displayCutoutPadding(),
+                contentAlignment = if (isLandscape) Alignment.BottomCenter else Alignment.TopCenter
+            ) {
+                SubtitleOverlay(
+                    subtitleText = currentSubtitle,
+                    modifier = if (isLandscape) {
+                        Modifier
+                            .padding(bottom = 36.dp)
+                            .padding(horizontal = 24.dp)
+                    } else {
+                        // In portrait orientation on m.youtube.com, the video player is pinned at the top (~220dp height).
+                        // Position subtitle near the lower edge of the web video player!
+                        Modifier
+                            .padding(top = 175.dp)
+                            .padding(horizontal = 24.dp)
+                    }
+                )
+            }
 
             // Floating VOT Controller Pill
             val isSynced = !currentTranslatedAudioUrl.isNullOrEmpty()

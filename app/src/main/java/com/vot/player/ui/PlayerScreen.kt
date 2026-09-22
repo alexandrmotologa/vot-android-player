@@ -445,15 +445,28 @@ fun PlayerScreen(
         }
 
         // Subtitle Overlay
-        SubtitleOverlay(
-            subtitleText = currentSubtitle,
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .fillMaxSize()
                 .navigationBarsPadding()
-                .displayCutoutPadding()
-                .padding(bottom = if (showControls) (if (isLandscape) 135.dp else 195.dp) else 36.dp)
-                .padding(horizontal = 20.dp)
-        )
+                .displayCutoutPadding(),
+            contentAlignment = if (isLandscape) Alignment.BottomCenter else Alignment.Center
+        ) {
+            SubtitleOverlay(
+                subtitleText = currentSubtitle,
+                modifier = if (isLandscape) {
+                    Modifier
+                        .padding(bottom = if (showControls) 120.dp else 28.dp)
+                        .padding(horizontal = 24.dp)
+                } else {
+                    // In portrait orientation, video is centered (16:9).
+                    // Position subtitle near the bottom edge of the centered 16:9 video frame!
+                    Modifier
+                        .padding(top = 75.dp)
+                        .padding(horizontal = 24.dp)
+                }
+            )
+        }
 
         // Loading or Status banner
         if (isLoading) {

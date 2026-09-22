@@ -147,34 +147,7 @@ class VotWebBridge(
                     });
                 } catch(e) {}
 
-                try {
-                    const origFetch = window.fetch;
-                    window.fetch = function() {
-                        const url = arguments[0];
-                        if (typeof url === 'string') {
-                            if (url.includes('/youtubei/v1/player/ad_break') || url.includes('/get_midroll_info') || url.includes('doubleclick.net')) {
-                                return Promise.resolve(new Response('{}', { status: 200 }));
-                            }
-                            if (url.includes('/youtubei/v1/player') && !url.includes('/ad_break')) {
-                                return origFetch.apply(this, arguments).then(async function(res) {
-                                    try {
-                                        const clone = res.clone();
-                                        const data = await clone.json();
-                                        pruneAdConfig(data);
-                                        return new Response(JSON.stringify(data), {
-                                            status: res.status,
-                                            statusText: res.statusText,
-                                            headers: res.headers
-                                        });
-                                    } catch(e) {
-                                        return res;
-                                    }
-                                });
-                            }
-                        }
-                        return origFetch.apply(this, arguments);
-                    };
-                } catch(e) {}
+
 
                 function isAdActive() {
                     const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
@@ -375,11 +348,6 @@ class VotWebBridge(
                             const video = document.querySelector('video');
                             if (video) {
                                 video.muted = true;
-                                try {
-                                    if (video.duration && isFinite(video.duration)) {
-                                        video.currentTime = video.duration;
-                                    }
-                                } catch(e) {}
                             }
 
                             const skipBtns = document.querySelectorAll(

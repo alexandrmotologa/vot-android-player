@@ -46,10 +46,9 @@ class VotApiClient(
         .readTimeout(20, TimeUnit.SECONDS)
         .build(),
     private val hosts: List<String> = listOf(
-        "api.browser.yandex.ru",
         "vot-worker.vtrans.eu.cc",
-        "vot-worker.toil.cc",
-        "vot-worker.eu.cc"
+        "vot-worker.eu.cc",
+        "vot-worker.toil.cc"
     )
 ) {
     private var currentHostIndex = 0
@@ -71,7 +70,7 @@ class VotApiClient(
     companion object {
         private const val DIRECT_HOST = "api.browser.yandex.ru"
         private const val HMAC_KEY = "bt8xH3VOlb4mqf0nqAibnDOoiPlXsisf"
-        private const val COMPONENT_VERSION = "26.8.3.1002"
+        private const val COMPONENT_VERSION = "26.8.3.971"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 YaBrowser/26.8.0.0 Safari/537.36"
         private const val SEC_CH_UA = "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"YaBrowser\";v=\"26.8\", \"Yowser\";v=\"2.5\""
         private const val SEC_CH_UA_FULL_VERSION_LIST = "\"Not;A=Brand\";v=\"8.0.0.0\", \"Chromium\";v=\"150.0.7871.1002\", \"YaBrowser\";v=\"26.8.3.1002\", \"Yowser\";v=\"2.5\""
@@ -334,7 +333,7 @@ class VotApiClient(
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
                     useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE),
-                    videoTitle = videoTitle
+                    selectedVoice = preferredVoice
                 )
 
                 val response = executeYaRequest(
@@ -458,6 +457,11 @@ class VotApiClient(
                             videoTitle = videoTitle,
                             onProgress = onProgress
                         )
+                    }
+                    if (attempts <= hosts.size) {
+                        rotateHost()
+                        delay(1200L)
+                        continue
                     }
                     return@withContext Result.failure(Exception(result.message ?: "Yandex translation failed for this video."))
                 } else {

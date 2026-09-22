@@ -34,14 +34,18 @@ object VotProtobuf {
     }
 
     private fun writeBool(out: ByteArrayOutputStream, fieldNumber: Int, value: Boolean) {
-        writeTag(out, fieldNumber, 0)
-        writeVarint(out, if (value) 1 else 0)
+        if (value) {
+            writeTag(out, fieldNumber, 0)
+            writeVarint(out, 1)
+        }
     }
 
     private fun writeDouble(out: ByteArrayOutputStream, fieldNumber: Int, value: Double) {
-        writeTag(out, fieldNumber, 1)
-        val buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putDouble(value)
-        out.write(buf.array())
+        if (value != 0.0) {
+            writeTag(out, fieldNumber, 1)
+            val buf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putDouble(value)
+            out.write(buf.array())
+        }
     }
 
     private fun readVarint(stream: ByteArrayInputStream): Long {
@@ -74,8 +78,8 @@ object VotProtobuf {
             0 -> readVarint(stream)
             1 -> stream.skip(8)
             2 -> {
-                val len = readVarint(stream).toInt()
-                stream.skip(len.toLong())
+                val len = readVarint(stream)
+                stream.skip(len)
             }
             5 -> stream.skip(4)
         }
@@ -94,17 +98,19 @@ object VotProtobuf {
         val stream = ByteArrayInputStream(bytes)
         var secretKey = ""
         var expires = 0
+
         while (stream.available() > 0) {
             val tag = readVarint(stream).toInt()
-            val field = tag ushr 3
-            val wire = tag and 7
-            when (field) {
+            val fieldNumber = tag ushr 3
+            val wireType = tag and 7
+
+            when (fieldNumber) {
                 1 -> {
                     val len = readVarint(stream).toInt()
                     secretKey = readString(stream, len)
                 }
                 2 -> expires = readVarint(stream).toInt()
-                else -> skipField(stream, wire)
+                else -> skipField(stream, wireType)
             }
         }
         return Pair(secretKey, expires)
@@ -117,25 +123,19 @@ object VotProtobuf {
         requestLang: String = "en",
         firstRequest: Boolean = true,
         useLivelyVoice: Boolean = false,
-        videoTitle: String = ""
+        selectedVoice: String = ""
     ): ByteArray {
         val out = ByteArrayOutputStream()
         writeString(out, 3, url)
         writeBool(out, 5, firstRequest)
         val validDuration = if (duration <= 0.0) 300.0 else duration
         writeDouble(out, 6, validDuration)
-        writeBool(out, 7, true) // unknown0 = true (CRITICAL for Yandex VOT protocol)
         writeString(out, 8, requestLang)
+        if (selectedVoice.isNotEmpty()) {
+            writeString(out, 13, selectedVoice)
+        }
         writeString(out, 14, responseLang)
-        writeBool(out, 15, true) // unknown2 = true
-        writeTag(out, 16, 0) // configVersion tag (field 16, wire 0)
-        writeVarint(out, 2) // configVersion = 2 (CRITICAL for Live Voice generation)
-        if (useLivelyVoice) {
-            writeBool(out, 18, true)
-        }
-        if (videoTitle.isNotEmpty()) {
-            writeString(out, 19, videoTitle)
-        }
+        writeBool(out, 18, useLivelyVoice)
         return out.toByteArray()
     }
 
