@@ -85,6 +85,8 @@ fun YouTubeWebScreen(
     hasRussianSubtitles: Boolean = true,
     hasRomanianSubtitles: Boolean = true,
     hasEnglishSubtitles: Boolean = true,
+    keepScreenOn: Boolean = true,
+    onKeepScreenOnChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -727,6 +729,8 @@ fun YouTubeWebScreen(
                 onTranslationTriggerModeChange = onTranslationTriggerModeChange,
                 autoSkipRussianVideos = autoSkipRussianVideos,
                 onAutoSkipRussianVideosChange = onAutoSkipRussianVideosChange,
+                keepScreenOn = keepScreenOn,
+                onKeepScreenOnChange = onKeepScreenOnChange,
                 isTranslationActive = isTranslationActive,
                 onTriggerTranslation = {
                     showControlsSheet = false

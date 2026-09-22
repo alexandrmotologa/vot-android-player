@@ -58,6 +58,8 @@ fun SettingsBottomSheet(
     onQualityChange: (VideoQuality) -> Unit = {},
     isSponsorBlockEnabled: Boolean = true,
     onSponsorBlockChange: (Boolean) -> Unit = {},
+    keepScreenOn: Boolean = true,
+    onKeepScreenOnChange: (Boolean) -> Unit = {},
     isAudioOnly: Boolean = false,
     onToggleAudioOnly: () -> Unit = {},
     preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
@@ -556,6 +558,38 @@ fun SettingsBottomSheet(
                                 Switch(
                                     checked = isSponsorBlockEnabled,
                                     onCheckedChange = { onSponsorBlockChange(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = AccentRed
+                                    )
+                                )
+                            }
+                        }
+
+                        // Keep Screen Awake
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SettingsCard(title = "Display & Screen", icon = Icons.Default.PhoneAndroid) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Keep Screen Awake",
+                                        color = TextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Prevents device screen from turning off while playing",
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = keepScreenOn,
+                                    onCheckedChange = { onKeepScreenOnChange(it) },
                                     colors = SwitchDefaults.colors(
                                         checkedThumbColor = Color.White,
                                         checkedTrackColor = AccentRed

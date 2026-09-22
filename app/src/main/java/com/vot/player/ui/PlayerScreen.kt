@@ -79,6 +79,8 @@ fun PlayerScreen(
     onLanguageChange: (TargetLanguage) -> Unit,
     isSponsorBlockEnabled: Boolean = true,
     onSponsorBlockChange: (Boolean) -> Unit = {},
+    keepScreenOn: Boolean = true,
+    onKeepScreenOnChange: (Boolean) -> Unit = {},
     preferredPlayerMode: PlayerMode = PlayerMode.ASK_EVERY_TIME,
     onPlayerModeChange: (PlayerMode) -> Unit = {},
     translationTriggerMode: TranslationTriggerMode = TranslationTriggerMode.ALWAYS_AUTO,
@@ -473,29 +475,34 @@ fun PlayerScreen(
         }
 
         // Subtitle Overlay
+        val screenHeightDp = configuration.screenHeightDp.dp
+        val screenWidthDp = configuration.screenWidthDp.dp
+        val videoHeightDp = screenWidthDp * 9f / 16f
+        val videoBottomDp = (screenHeightDp + videoHeightDp) / 2f
+
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding()
-                .displayCutoutPadding(),
-            contentAlignment = if (isInPipMode) Alignment.BottomCenter else if (isLandscape) Alignment.BottomCenter else Alignment.Center
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = if (isInPipMode) Alignment.BottomCenter else if (isLandscape) Alignment.BottomCenter else Alignment.TopCenter
         ) {
             SubtitleOverlay(
                 subtitleText = currentSubtitle,
                 modifier = if (isInPipMode) {
                     Modifier
+                        .navigationBarsPadding()
                         .padding(bottom = 6.dp)
                         .padding(horizontal = 8.dp)
                 } else if (isLandscape) {
                     Modifier
+                        .navigationBarsPadding()
+                        .displayCutoutPadding()
                         .padding(bottom = if (showControls) 120.dp else 28.dp)
                         .padding(horizontal = 24.dp)
                 } else {
                     // In portrait orientation, video is centered (16:9).
-                    // Position subtitle near the bottom edge of the centered 16:9 video frame!
+                    // Position subtitle cleanly OUTSIDE the video frame in the letterbox space right below the video!
                     Modifier
-                        .padding(top = 75.dp)
-                        .padding(horizontal = 24.dp)
+                        .padding(top = videoBottomDp + 18.dp)
+                        .padding(horizontal = 20.dp)
                 }
             )
         }
@@ -1047,6 +1054,8 @@ fun PlayerScreen(
                 onQualityChange = { playerManager.changeQuality(it) },
                 isSponsorBlockEnabled = isSponsorBlockEnabled,
                 onSponsorBlockChange = onSponsorBlockChange,
+                keepScreenOn = keepScreenOn,
+                onKeepScreenOnChange = onKeepScreenOnChange,
                 isAudioOnly = isAudioOnly,
                 onToggleAudioOnly = { playerManager.toggleAudioOnly() },
                 preferredPlayerMode = preferredPlayerMode,

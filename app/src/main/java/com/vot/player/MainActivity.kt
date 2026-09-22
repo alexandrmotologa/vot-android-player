@@ -127,6 +127,7 @@ class MainActivity : ComponentActivity() {
     private var isTranslationActive by mutableStateOf(false)
     private var showTranslationPrompt by mutableStateOf(false)
     private var isInPipMode by mutableStateOf(false)
+    private var keepScreenOn by mutableStateOf(true)
 
     override fun onResume() {
         super.onResume()
@@ -160,6 +161,7 @@ class MainActivity : ComponentActivity() {
         selectedSubtitles = prefs.preferredSubtitlesMode
         translationTriggerMode = prefs.translationTriggerMode
         autoSkipRussianVideos = prefs.autoSkipRussianVideos
+        keepScreenOn = prefs.keepScreenOn
 
         playerManager = VotPlayerManager(
             context = this,
@@ -193,6 +195,17 @@ class MainActivity : ComponentActivity() {
             VotPlayerTheme {
                 val exportState by exportManager.exportState.collectAsState()
                 val isPlayingState by playerManager.isPlaying.collectAsState()
+
+                DisposableEffect(activeVideoUrl, isPlayingState, keepScreenOn) {
+                    if (activeVideoUrl != null && keepScreenOn) {
+                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+                    onDispose {
+                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+                }
 
                 LaunchedEffect(isPlayingState, isInPipMode) {
                     if (isInPipMode) {
@@ -303,6 +316,11 @@ class MainActivity : ComponentActivity() {
                                 onAutoSkipRussianVideosChange = { skip ->
                                     autoSkipRussianVideos = skip
                                     prefs.autoSkipRussianVideos = skip
+                                },
+                                keepScreenOn = keepScreenOn,
+                                onKeepScreenOnChange = { enabled ->
+                                    keepScreenOn = enabled
+                                    prefs.keepScreenOn = enabled
                                 },
                                 isTranslationActive = isTranslationActive,
                                 showTranslationPrompt = showTranslationPrompt,
@@ -438,6 +456,11 @@ class MainActivity : ComponentActivity() {
                                     autoSkipRussianVideos = skip
                                     prefs.autoSkipRussianVideos = skip
                                 },
+                                keepScreenOn = keepScreenOn,
+                                onKeepScreenOnChange = { enabled ->
+                                    keepScreenOn = enabled
+                                    prefs.keepScreenOn = enabled
+                                },
                                 isTranslationActive = isTranslationActive,
                                 showTranslationPrompt = showTranslationPrompt,
                                 onTriggerTranslation = {
@@ -571,6 +594,11 @@ class MainActivity : ComponentActivity() {
                             onAutoSkipRussianVideosChange = { skip ->
                                 autoSkipRussianVideos = skip
                                 prefs.autoSkipRussianVideos = skip
+                            },
+                            keepScreenOn = keepScreenOn,
+                            onKeepScreenOnChange = { enabled ->
+                                keepScreenOn = enabled
+                                prefs.keepScreenOn = enabled
                             },
                             isTranslationActive = isTranslationActive,
                             onTriggerTranslation = {

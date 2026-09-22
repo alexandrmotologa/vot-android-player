@@ -30,6 +30,7 @@ class PlayerPreferences(context: Context) {
         private const val KEY_VOICE_ACTOR = "pref_voice_actor"
         private const val KEY_TRANSLATION_TRIGGER = "pref_translation_trigger"
         private const val KEY_SKIP_RUSSIAN = "pref_skip_russian"
+        private const val KEY_KEEP_SCREEN_ON = "pref_keep_screen_on"
 
         @Volatile
         private var instance: PlayerPreferences? = null
@@ -112,4 +113,8 @@ class PlayerPreferences(context: Context) {
     var autoSkipRussianVideos: Boolean
         get() = prefs.getBoolean(KEY_SKIP_RUSSIAN, true)
         set(value) = prefs.edit().putBoolean(KEY_SKIP_RUSSIAN, value).apply()
+
+    var keepScreenOn: Boolean
+        get() = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true)
+        set(value) = prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, value).apply()
 }

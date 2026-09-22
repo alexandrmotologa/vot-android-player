@@ -289,9 +289,23 @@ class VotPlayerManager(
         updateSubtitles(webPositionMs)
         if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {
             val aPos = voiceoverPlayer.currentPosition
-            val delta = kotlin.math.abs(webPositionMs - aPos)
-            if (delta > 600) {
+            val delta = webPositionMs - aPos
+            val absDelta = kotlin.math.abs(delta)
+            val baseSpeed = _playbackSpeed.value
+            if (absDelta > 1500L) {
                 voiceoverPlayer.seekTo(webPositionMs)
+                if (voiceoverPlayer.playbackParameters.speed != baseSpeed) {
+                    voiceoverPlayer.playbackParameters = PlaybackParameters(baseSpeed)
+                }
+            } else if (absDelta > 250L) {
+                val adjustedSpeed = if (delta > 0) (baseSpeed * 1.04f).coerceAtMost(2.0f) else (baseSpeed * 0.96f).coerceAtLeast(0.25f)
+                if (voiceoverPlayer.playbackParameters.speed != adjustedSpeed) {
+                    voiceoverPlayer.playbackParameters = PlaybackParameters(adjustedSpeed)
+                }
+            } else {
+                if (voiceoverPlayer.playbackParameters.speed != baseSpeed) {
+                    voiceoverPlayer.playbackParameters = PlaybackParameters(baseSpeed)
+                }
             }
             if (!_isPlaying.value && voiceoverPlayer.isPlaying) {
                 voiceoverPlayer.pause()
@@ -579,12 +593,35 @@ class VotPlayerManager(
                         }
                     }
 
-                    // Resync voiceover if drifted by more than 80ms
+                    // Intelligent smooth voiceover drift synchronization (prevents choppy/clipped words)
                     if (voiceoverPlayer.mediaItemCount > 0 && voiceoverPlayer.playbackState == Player.STATE_READY) {
                         val aPos = voiceoverPlayer.currentPosition
-                        val delta = abs(vPos - aPos)
-                        if (delta > 80) {
+                        val delta = vPos - aPos
+                        val absDelta = abs(delta)
+                        val baseSpeed = _playbackSpeed.value
+
+                        if (absDelta > 1200L) {
+                            // Large desync or seek jump: seek directly to video position
                             voiceoverPlayer.seekTo(vPos)
+                            if (voiceoverPlayer.playbackParameters.speed != baseSpeed) {
+                                voiceoverPlayer.playbackParameters = PlaybackParameters(baseSpeed)
+                            }
+                        } else if (absDelta > 200L) {
+                            // Mild drift (200ms - 1200ms): gently adjust playback speed to converge smoothly
+                            // without flushing audio buffers or cutting off spoken words
+                            val adjustedSpeed = if (delta > 0) {
+                                (baseSpeed * 1.04f).coerceAtMost(2.0f)
+                            } else {
+                                (baseSpeed * 0.96f).coerceAtLeast(0.25f)
+                            }
+                            if (voiceoverPlayer.playbackParameters.speed != adjustedSpeed) {
+                                voiceoverPlayer.playbackParameters = PlaybackParameters(adjustedSpeed)
+                            }
+                        } else {
+                            // Within acceptable tolerance (<= 200ms): keep exact matching speed
+                            if (voiceoverPlayer.playbackParameters.speed != baseSpeed) {
+                                voiceoverPlayer.playbackParameters = PlaybackParameters(baseSpeed)
+                            }
                         }
                     }
 
