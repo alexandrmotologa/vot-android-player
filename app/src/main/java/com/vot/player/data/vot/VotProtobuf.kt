@@ -117,13 +117,15 @@ object VotProtobuf {
         requestLang: String = "en",
         firstRequest: Boolean = true,
         useLivelyVoice: Boolean = false,
-        videoTitle: String = ""
+        videoTitle: String = "",
+        translationId: String = ""
     ): ByteArray {
         val out = ByteArrayOutputStream()
-        writeString(out, 3, url)
-        if (firstRequest) {
-            writeBool(out, 5, true)
+        if (translationId.isNotEmpty()) {
+            writeString(out, 1, translationId)
         }
+        writeString(out, 3, url)
+        writeBool(out, 5, firstRequest)
         val validDuration = if (duration <= 0.0) 300.0 else duration
         writeDouble(out, 6, validDuration)
         writeBool(out, 7, true) // unknown0 = true (CRITICAL for Yandex VOT protocol)

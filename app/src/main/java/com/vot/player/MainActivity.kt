@@ -271,6 +271,9 @@ class MainActivity : ComponentActivity() {
                                 onDismissTranslationPrompt = {
                                     showTranslationPrompt = false
                                 },
+                                onDismissStatus = {
+                                    statusMessage = null
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -283,6 +286,9 @@ class MainActivity : ComponentActivity() {
                                 embeddedUrl = if (info.streamUrl.startsWith("http")) info.streamUrl else null,
                                 statusMessage = statusMessage,
                                 isLoading = isLoading,
+                                onDismissStatus = {
+                                    statusMessage = null
+                                },
                                 selectedVoiceType = selectedVoiceType,
                                 onVoiceTypeChange = { newVoice ->
                                     selectedVoiceType = newVoice
@@ -694,7 +700,14 @@ class MainActivity : ComponentActivity() {
                 )
             } else {
                 isTranslationActive = false
-                statusMessage = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
+                val errorMsg = votResult.exceptionOrNull()?.message ?: "Translation unavailable"
+                statusMessage = errorMsg
+                launch {
+                    delay(5000L)
+                    if (statusMessage == errorMsg) {
+                        statusMessage = null
+                    }
+                }
             }
         }
     }

@@ -89,6 +89,7 @@ fun PlayerScreen(
     showTranslationPrompt: Boolean = false,
     onTriggerTranslation: () -> Unit = {},
     onDismissTranslationPrompt: () -> Unit = {},
+    onDismissStatus: () -> Unit = {},
     onEnterPiP: () -> Unit,
     onNavigateBack: () -> Unit,
     onExportVideo: () -> Unit,
@@ -893,6 +894,14 @@ fun PlayerScreen(
         }
 
         // Animated Status Notification Pill / Loader
+        val isErrorMessage = statusMessage?.let { msg ->
+            msg.contains("ошибка", ignoreCase = true) ||
+            msg.contains("failed", ignoreCase = true) ||
+            msg.contains("error", ignoreCase = true) ||
+            msg.contains("unavailable", ignoreCase = true) ||
+            msg.contains("timed out", ignoreCase = true)
+        } ?: false
+
         AnimatedVisibility(
             visible = isLoading || !statusMessage.isNullOrEmpty(),
             enter = fadeIn() + slideInVertically { -it },
@@ -901,19 +910,24 @@ fun PlayerScreen(
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
                 .displayCutoutPadding()
-                .padding(top = if (isLandscape) 8.dp else 16.dp)
+                .padding(top = if (isLandscape) 52.dp else 68.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xEE1E1E28),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    if (isLoading) AccentRed.copy(alpha = 0.7f) else Color(0xFF4CAF50).copy(alpha = 0.7f)
+                    if (isLoading) AccentRed.copy(alpha = 0.7f)
+                    else if (isErrorMessage) Color(0xFFFF5252).copy(alpha = 0.8f)
+                    else Color(0xFF4CAF50).copy(alpha = 0.7f)
                 ),
-                shadowElevation = 8.dp
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clickable { onDismissStatus() }
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isLoading) {
@@ -921,6 +935,13 @@ fun PlayerScreen(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
                             color = AccentRed
+                        )
+                    } else if (isErrorMessage) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Error",
+                            tint = Color(0xFFFF5252),
+                            modifier = Modifier.size(16.dp)
                         )
                     } else {
                         Icon(
@@ -934,9 +955,22 @@ fun PlayerScreen(
                     Text(
                         text = statusMessage ?: if (isLoading) "Loading translation..." else "Ready",
                         color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    if (!isLoading) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { onDismissStatus() }
+                        )
+                    }
                 }
             }
         }

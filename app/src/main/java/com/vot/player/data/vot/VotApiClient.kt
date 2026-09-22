@@ -285,6 +285,7 @@ class VotApiClient(
             var attempts = 0
             val maxAttempts = 35
             var audioFallbackSent = false
+            var currentTranslationId = ""
 
             while (attempts < maxAttempts) {
                 attempts++
@@ -297,7 +298,8 @@ class VotApiClient(
                     responseLang = targetLang.code,
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
-                    useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE)
+                    useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE),
+                    translationId = currentTranslationId
                 )
 
                 val response = executeYaRequest(
@@ -327,6 +329,10 @@ class VotApiClient(
 
                 val result = VotProtobuf.decodeTranslationResponse(responseBytes)
 
+                if (result.translationId.isNotEmpty()) {
+                    currentTranslationId = result.translationId
+                }
+
                 if (result.isSuccess) {
                     onProgress?.invoke("Translation ready!")
                     return@withContext Result.success(result)
@@ -354,7 +360,7 @@ class VotApiClient(
                             val fileId = "fallback-empty-audio:video-translation:$videoId"
                             val audioReqBytes = VotProtobuf.encodeTranslationAudioRequest(
                                 url = normalizedUrl,
-                                translationId = result.translationId,
+                                translationId = result.translationId.ifEmpty { currentTranslationId },
                                 fileId = fileId
                             )
                             executeYaRequest(
