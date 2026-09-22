@@ -664,6 +664,8 @@ class MainActivity : ComponentActivity() {
                 targetLang = selectedLanguage,
                 voiceType = selectedVoiceType,
                 preferredVoice = preferredVoiceParam,
+                directAudioUrl = currentVideoInfo?.directAudioUrl,
+                videoTitle = currentVideoInfo?.title ?: "",
                 onProgress = { statusMessage = it }
             )
 

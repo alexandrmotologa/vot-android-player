@@ -117,13 +117,9 @@ object VotProtobuf {
         requestLang: String = "en",
         firstRequest: Boolean = true,
         useLivelyVoice: Boolean = false,
-        videoTitle: String = "",
-        translationId: String = ""
+        videoTitle: String = ""
     ): ByteArray {
         val out = ByteArrayOutputStream()
-        if (translationId.isNotEmpty()) {
-            writeString(out, 1, translationId)
-        }
         writeString(out, 3, url)
         writeBool(out, 5, firstRequest)
         val validDuration = if (duration <= 0.0) 300.0 else duration

@@ -17,6 +17,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.io.ByteArrayOutputStream
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.TimeUnit
@@ -25,6 +26,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 import android.webkit.CookieManager
+import com.vot.player.data.youtube.YouTubeStreamExtractor
 import okhttp3.FormBody
 
 data class MultiSubtitles(
@@ -270,12 +272,45 @@ class VotApiClient(
         throw lastException ?: Exception("Failed to create VOT session on all hosts")
     }
 
+    private fun downloadAudioBytes(audioUrl: String, maxBytes: Int = 10 * 1024 * 1024): ByteArray? {
+        return try {
+            val cookie = try {
+                CookieManager.getInstance().getCookie("https://www.youtube.com")
+            } catch (_: Exception) {
+                null
+            }
+            val reqBuilder = Request.Builder()
+                .url(audioUrl)
+                .header("User-Agent", USER_AGENT)
+            if (!cookie.isNullOrEmpty()) {
+                reqBuilder.header("Cookie", cookie)
+            }
+            val response = okHttpClient.newCall(reqBuilder.build()).execute()
+            if (!response.isSuccessful) return null
+            val stream = response.body?.byteStream() ?: return null
+            val buffer = ByteArrayOutputStream()
+            val chunk = ByteArray(32 * 1024)
+            var total = 0
+            while (total < maxBytes) {
+                val bytesRead = stream.read(chunk)
+                if (bytesRead == -1) break
+                buffer.write(chunk, 0, bytesRead)
+                total += bytesRead
+            }
+            buffer.toByteArray()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun translateVideo(
         videoUrl: String,
         durationSeconds: Double,
         targetLang: TargetLanguage = TargetLanguage.RUSSIAN,
         voiceType: VoiceType = VoiceType.STANDARD,
         preferredVoice: String = "",
+        directAudioUrl: String? = null,
+        videoTitle: String = "",
         onProgress: ((String) -> Unit)? = null
     ): Result<VotTranslationResult> = withContext(Dispatchers.IO) {
         try {
@@ -299,7 +334,7 @@ class VotApiClient(
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
                     useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE),
-                    translationId = currentTranslationId
+                    videoTitle = videoTitle
                 )
 
                 val response = executeYaRequest(
@@ -340,7 +375,7 @@ class VotApiClient(
                     firstRequest = false
                     if (videoId != null && !audioFallbackSent) {
                         audioFallbackSent = true
-                        onProgress?.invoke("Queueing audio with Yandex neural translator...")
+                        onProgress?.invoke("Preparing audio for Yandex neural translator...")
                         try {
                             // 1. Send fail-audio-js PUT (without Vtrans signature headers)
                             val failJson = JSONObject().apply {
@@ -356,12 +391,33 @@ class VotApiClient(
                                 withSecHeaders = false
                             )
 
-                            // 2. Send fallback audio PUT
-                            val fileId = "fallback-empty-audio:video-translation:$videoId"
+                            // 2. Fetch real audio bytes if available
+                            var realAudioBytes: ByteArray? = null
+                            var audioUrlToDownload = directAudioUrl
+                            if (audioUrlToDownload.isNullOrEmpty() && (normalizedUrl.contains("youtu.be") || normalizedUrl.contains("youtube.com"))) {
+                                try {
+                                    val extracted = YouTubeStreamExtractor().extractStreamInfo(normalizedUrl).getOrNull()
+                                    audioUrlToDownload = extracted?.directAudioUrl
+                                } catch (_: Exception) {}
+                            }
+
+                            if (!audioUrlToDownload.isNullOrEmpty()) {
+                                onProgress?.invoke("Streaming audio to Yandex neural translator...")
+                                realAudioBytes = downloadAudioBytes(audioUrlToDownload)
+                            }
+
+                            // 3. Send audio PUT
+                            val fileId = if (realAudioBytes != null && realAudioBytes.isNotEmpty()) {
+                                "random-web_abr-${generateUUID()}"
+                            } else {
+                                "fallback-empty-audio:video-translation:$videoId"
+                            }
+
                             val audioReqBytes = VotProtobuf.encodeTranslationAudioRequest(
                                 url = normalizedUrl,
                                 translationId = result.translationId.ifEmpty { currentTranslationId },
-                                fileId = fileId
+                                fileId = fileId,
+                                audioBytes = realAudioBytes ?: ByteArray(0)
                             )
                             executeYaRequest(
                                 path = "/video-translation/audio",
@@ -398,6 +454,8 @@ class VotApiClient(
                             targetLang = targetLang,
                             voiceType = VoiceType.STANDARD,
                             preferredVoice = "",
+                            directAudioUrl = directAudioUrl,
+                            videoTitle = videoTitle,
                             onProgress = onProgress
                         )
                     }
