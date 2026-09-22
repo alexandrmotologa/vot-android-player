@@ -35,8 +35,15 @@ fun GestureOverlay(
     onSeekRelative: (Long) -> Unit,
     onToggleControls: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    if (!enabled) {
+        Box(modifier = modifier.fillMaxSize()) {
+            content()
+        }
+        return
+    }
     var gestureFeedback by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(gestureFeedback) {

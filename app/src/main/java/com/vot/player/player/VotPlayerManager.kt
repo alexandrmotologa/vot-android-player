@@ -203,8 +203,11 @@ class VotPlayerManager(
         subtitleCues = subtitles
         _hasSubtitles.value = subtitles.isNotEmpty()
         _availableQualities.value = videoInfo.availableQualities
+        _currentPositionMs.value = startPositionMs
         if (videoInfo.durationSeconds > 0L) {
             _durationMs.value = videoInfo.durationSeconds * 1000L
+        } else {
+            _durationMs.value = 0L
         }
 
         val defaultQuality = videoInfo.availableQualities.firstOrNull()
@@ -554,12 +557,7 @@ class VotPlayerManager(
     }
 
     fun toggleAudioOnly() {
-        val nextState = !_isAudioOnly.value
-        _isAudioOnly.value = nextState
-        videoPlayer.trackSelectionParameters = videoPlayer.trackSelectionParameters
-            .buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, nextState)
-            .build()
+        _isAudioOnly.value = !_isAudioOnly.value
     }
 
     private fun startSyncLoop() {

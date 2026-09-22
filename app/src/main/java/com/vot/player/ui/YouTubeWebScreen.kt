@@ -266,35 +266,36 @@ fun YouTubeWebScreen(
                         Icon(Icons.Default.Refresh, contentDescription = "Reload", tint = Color.White)
                     }
                     IconButton(onClick = { showSubtitlePicker = true }) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (selectedSubtitles != SubtitlesMode.OFF) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
-                                contentDescription = "Subtitles / Closed Captions",
-                                tint = if (selectedSubtitles != SubtitlesMode.OFF) AccentRed else Color.White
-                            )
-                            if (selectedSubtitles != SubtitlesMode.OFF) {
-                                val badge = when (selectedSubtitles) {
-                                    SubtitlesMode.RUSSIAN -> "RU"
-                                    SubtitlesMode.ROMANIAN -> "RO"
-                                    SubtitlesMode.ENGLISH -> "EN"
-                                    else -> ""
-                                }
-                                Surface(
-                                    color = AccentRed,
-                                    shape = RoundedCornerShape(3.dp),
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .offset(x = 2.dp, y = 2.dp)
+                        if (selectedSubtitles != SubtitlesMode.OFF) {
+                            val badge = when (selectedSubtitles) {
+                                SubtitlesMode.RUSSIAN -> "RU"
+                                SubtitlesMode.ROMANIAN -> "RO"
+                                SubtitlesMode.ENGLISH -> "EN"
+                                else -> "CC"
+                            }
+                            Surface(
+                                color = AccentRed,
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.height(20.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 ) {
                                     Text(
                                         text = badge,
                                         color = Color.White,
-                                        fontSize = 7.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.ClosedCaptionDisabled,
+                                contentDescription = "Subtitles / Closed Captions",
+                                tint = Color.White.copy(alpha = 0.7f)
+                            )
                         }
                     }
                     IconButton(onClick = { showControlsSheet = true }) {

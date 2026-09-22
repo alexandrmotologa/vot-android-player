@@ -91,6 +91,7 @@ fun PlayerScreen(
     onDismissTranslationPrompt: () -> Unit = {},
     onDismissStatus: () -> Unit = {},
     onEnterPiP: () -> Unit,
+    isInPipMode: Boolean = false,
     onNavigateBack: () -> Unit,
     onExportVideo: () -> Unit,
     onExportAudio: () -> Unit,
@@ -132,9 +133,17 @@ fun PlayerScreen(
 
     // Auto-hide controls after 7 seconds of playing
     LaunchedEffect(showControls, isPlaying) {
-        if (showControls && isPlaying) {
+        if (showControls && isPlaying && !isInPipMode) {
             delay(7000L)
             showControls = false
+        }
+    }
+
+    LaunchedEffect(isInPipMode) {
+        if (isInPipMode) {
+            showControls = false
+            showSettingsDialog = false
+            showSubtitlePicker = false
         }
     }
 
@@ -222,84 +231,11 @@ fun PlayerScreen(
             onOriginalVolumeChange = { playerManager.setOriginalVolume(it) },
             onVoiceoverVolumeChange = { playerManager.setVoiceoverVolume(it) },
             onSeekRelative = { playerManager.seekRelative(it) },
-            onToggleControls = { showControls = !showControls }
+            onToggleControls = { if (!isInPipMode) showControls = !showControls },
+            enabled = !isInPipMode
         ) {
-            if (isAudioOnly) {
-                // Podcast Visualizer View
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF101018)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(32.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(24.dp),
-                            shadowElevation = 12.dp,
-                            modifier = Modifier.size(220.dp)
-                        ) {
-                            if (!thumbnailUrl.isNullOrEmpty()) {
-                                AsyncImage(
-                                    model = thumbnailUrl,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color(0xFF222233)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Default.Headphones,
-                                        contentDescription = null,
-                                        tint = AccentRed,
-                                        modifier = Modifier.size(64.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Surface(
-                            color = AccentRed.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Headphones, contentDescription = null, tint = AccentRed, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("AUDIO-ONLY / PODCAST (90% DATA SAVED)", color = AccentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = videoTitle,
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = videoAuthor,
-                            color = TextSecondary,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            } else if (playerManager.videoPlayer.mediaItemCount > 0) {
+            // Core video surface (remains mounted to preserve playback, ExoPlayer/WebView session, and clock sync)
+            if (playerManager.videoPlayer.mediaItemCount > 0) {
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -323,7 +259,7 @@ fun PlayerScreen(
                         onSeek = { posMs -> playerManager.syncWebSeek(posMs) },
                         onTimeUpdate = { posMs, durMs -> playerManager.syncWebPosition(posMs, durMs) },
                         onRateChange = { rate -> playerManager.setPlaybackSpeed(rate) },
-                        onScreenTap = { showControls = !showControls },
+                        onScreenTap = { if (!isInPipMode) showControls = !showControls },
                         onFullscreenToggle = { isFs ->
                             val act = context as? android.app.Activity
                             act?.requestedOrientation = if (isFs) {
@@ -380,22 +316,17 @@ fun PlayerScreen(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                mediaPlaybackRequiresUserGesture = false
-                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
-                            }
-                            CookieManager.getInstance().setAcceptCookie(true)
-                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                            addJavascriptInterface(bridge, VotWebBridge.INTERFACE_NAME)
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                            addJavascriptInterface(bridge, "VotAndroidBridge")
 
                             webViewClient = object : WebViewClient() {
                                 override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                     val url = request?.url?.toString().orEmpty()
-                                    if (VotWebBridge.isAdUrl(url)) {
-                                        return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                                    if (url.contains("doubleclick.net") || url.contains("googleads") || url.contains("/pagead/") || url.contains("/ad_status")) {
+                                        return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                                     }
                                     return super.shouldInterceptRequest(view, request)
                                 }
@@ -403,9 +334,29 @@ fun PlayerScreen(
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     val cssInjection = """
-                                        const style = document.createElement('style');
-                                        style.textContent = `${VotWebBridge.MINIMALIST_CSS}`;
-                                        document.head.appendChild(style);
+                                        (function() {
+                                            const style = document.createElement('style');
+                                            style.innerHTML = `
+                                                header, #header-bar, .ytm-pivot-bar-renderer, ytm-pivot-bar-renderer,
+                                                ytm-mobile-topbar-renderer, .mobile-topbar-header, .header-bar,
+                                                ytm-item-section-renderer[section-identifier="comment-item-section"],
+                                                .comment-section, ytm-comments-entry-point-header-renderer,
+                                                ytm-single-column-watch-next-results-renderer > ytm-item-section-renderer:not(:first-child),
+                                                ytm-related-chip-cloud-renderer, ytm-promoted-sparkles-web-renderer {
+                                                    display: none !important;
+                                                }
+                                                body, html {
+                                                    background: #000000 !important;
+                                                    overflow: hidden !important;
+                                                }
+                                                .video-stream, video {
+                                                    width: 100% !important;
+                                                    height: 100% !important;
+                                                    object-fit: contain !important;
+                                                }
+                                            `;
+                                            document.head.appendChild(style);
+                                        })();
                                     """.trimIndent()
                                     view?.evaluateJavascript(cssInjection, null)
                                     view?.evaluateJavascript(VotWebBridge.INJECTION_SCRIPT, null)
@@ -442,6 +393,83 @@ fun PlayerScreen(
                     CircularProgressIndicator(color = AccentRed)
                 }
             }
+
+            // Audio-Only Podcast Visualizer View (rendered over video surface, preserving playback clock)
+            if (isAudioOnly && !isInPipMode) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF101018)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            shadowElevation = 12.dp,
+                            modifier = Modifier.size(220.dp)
+                        ) {
+                            if (!thumbnailUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = thumbnailUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF222233)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Headphones,
+                                        contentDescription = null,
+                                        tint = AccentRed,
+                                        modifier = Modifier.size(64.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Surface(
+                            color = AccentRed.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Headphones, contentDescription = null, tint = AccentRed, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("AUDIO-ONLY / PODCAST (DATA SAVED)", color = AccentRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = videoTitle,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = videoAuthor,
+                            color = TextSecondary,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
         }
 
         // Subtitle Overlay
@@ -450,11 +478,15 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .navigationBarsPadding()
                 .displayCutoutPadding(),
-            contentAlignment = if (isLandscape) Alignment.BottomCenter else Alignment.Center
+            contentAlignment = if (isInPipMode) Alignment.BottomCenter else if (isLandscape) Alignment.BottomCenter else Alignment.Center
         ) {
             SubtitleOverlay(
                 subtitleText = currentSubtitle,
-                modifier = if (isLandscape) {
+                modifier = if (isInPipMode) {
+                    Modifier
+                        .padding(bottom = 6.dp)
+                        .padding(horizontal = 8.dp)
+                } else if (isLandscape) {
                     Modifier
                         .padding(bottom = if (showControls) 120.dp else 28.dp)
                         .padding(horizontal = 24.dp)
@@ -469,7 +501,7 @@ fun PlayerScreen(
         }
 
         // Loading or Status banner
-        if (isLoading) {
+        if (isLoading && !isInPipMode) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -487,7 +519,7 @@ fun PlayerScreen(
                     fontWeight = FontWeight.Medium
                 )
             }
-        } else if (!statusMessage.isNullOrEmpty() && showControls) {
+        } else if (!statusMessage.isNullOrEmpty() && showControls && !isInPipMode) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color(0xCC1A1A24),
@@ -510,7 +542,7 @@ fun PlayerScreen(
 
         // Animated Controls Overlay
         AnimatedVisibility(
-            visible = showControls,
+            visible = showControls && !isInPipMode,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
@@ -646,36 +678,37 @@ fun PlayerScreen(
                             onClick = { showSubtitlePicker = true },
                             modifier = Modifier.size(38.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (selectedSubtitles != SubtitlesMode.OFF) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
-                                    contentDescription = "Subtitles / Closed Captions",
-                                    tint = if (selectedSubtitles != SubtitlesMode.OFF) AccentRed else Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                if (selectedSubtitles != SubtitlesMode.OFF) {
-                                    val badge = when (selectedSubtitles) {
-                                        SubtitlesMode.RUSSIAN -> "RU"
-                                        SubtitlesMode.ROMANIAN -> "RO"
-                                        SubtitlesMode.ENGLISH -> "EN"
-                                        else -> ""
-                                    }
-                                    Surface(
-                                        color = AccentRed,
-                                        shape = RoundedCornerShape(3.dp),
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .offset(x = 2.dp, y = 2.dp)
+                            if (selectedSubtitles != SubtitlesMode.OFF) {
+                                val badge = when (selectedSubtitles) {
+                                    SubtitlesMode.RUSSIAN -> "RU"
+                                    SubtitlesMode.ROMANIAN -> "RO"
+                                    SubtitlesMode.ENGLISH -> "EN"
+                                    else -> "CC"
+                                }
+                                Surface(
+                                    color = AccentRed,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.height(20.dp)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     ) {
                                         Text(
                                             text = badge,
                                             color = Color.White,
-                                            fontSize = 7.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.ClosedCaptionDisabled,
+                                    contentDescription = "Subtitles / Closed Captions",
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                         IconButton(
@@ -827,8 +860,13 @@ fun PlayerScreen(
                             fontSize = 12.sp,
                             modifier = Modifier.width(46.dp)
                         )
+                        val durFloat = durationMs.toFloat()
+                        val posFloat = if (isDraggingSlider) dragPositionMs else currentPositionMs.toFloat()
+                        val safeValue = if (durFloat > 0f) posFloat.coerceIn(0f, durFloat) else 0f
+                        val safeRange = if (durFloat > 0f) 0f..durFloat else 0f..1f
+
                         Slider(
-                            value = (if (isDraggingSlider) dragPositionMs else currentPositionMs.toFloat()).coerceIn(0f, durationMs.toFloat().coerceAtLeast(1f)),
+                            value = safeValue,
                             onValueChange = { newValue ->
                                 isDraggingSlider = true
                                 dragPositionMs = newValue
@@ -838,7 +876,8 @@ fun PlayerScreen(
                                 isDraggingSlider = false
                                 playerManager.seekTo(target)
                             },
-                            valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
+                            valueRange = safeRange,
+                            enabled = durFloat > 0f,
                             colors = SliderDefaults.colors(
                                 thumbColor = AccentRed,
                                 activeTrackColor = AccentRed,
@@ -870,7 +909,7 @@ fun PlayerScreen(
 
         // Floating Persistent Pill when controls are hidden
         AnimatedVisibility(
-            visible = !showControls,
+            visible = !showControls && !isInPipMode,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -916,7 +955,7 @@ fun PlayerScreen(
         } ?: false
 
         AnimatedVisibility(
-            visible = isLoading || !statusMessage.isNullOrEmpty(),
+            visible = (isLoading || !statusMessage.isNullOrEmpty()) && !isInPipMode,
             enter = fadeIn() + slideInVertically { -it },
             exit = fadeOut() + slideOutVertically { -it },
             modifier = Modifier

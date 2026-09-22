@@ -1,9 +1,15 @@
 package com.vot.player
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
@@ -54,6 +60,23 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_VIDEO_URL = "com.vot.player.EXTRA_VIDEO_URL"
+        const val ACTION_PIP_PLAY_PAUSE = "com.vot.player.PIP_PLAY_PAUSE"
+        const val ACTION_PIP_SEEK = "com.vot.player.PIP_SEEK"
+    }
+
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_PIP_PLAY_PAUSE -> {
+                    playerManager.togglePlayPause()
+                    updatePipParams()
+                }
+                ACTION_PIP_SEEK -> {
+                    val offset = intent.getLongExtra("offset", 0L)
+                    playerManager.seekRelative(offset)
+                }
+            }
+        }
     }
 
     private lateinit var playerManager: VotPlayerManager
@@ -103,6 +126,7 @@ class MainActivity : ComponentActivity() {
     private var autoSkipRussianVideos by mutableStateOf(true)
     private var isTranslationActive by mutableStateOf(false)
     private var showTranslationPrompt by mutableStateOf(false)
+    private var isInPipMode by mutableStateOf(false)
 
     override fun onResume() {
         super.onResume()
@@ -155,9 +179,26 @@ class MainActivity : ComponentActivity() {
         checkUpdates()
         handleIntent(intent)
 
+        val pipFilter = IntentFilter().apply {
+            addAction(ACTION_PIP_PLAY_PAUSE)
+            addAction(ACTION_PIP_SEEK)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, pipFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, pipFilter)
+        }
+
         setContent {
             VotPlayerTheme {
                 val exportState by exportManager.exportState.collectAsState()
+                val isPlayingState by playerManager.isPlaying.collectAsState()
+
+                LaunchedEffect(isPlayingState, isInPipMode) {
+                    if (isInPipMode) {
+                        updatePipParams()
+                    }
+                }
                 var showExportDialog by remember { mutableStateOf(false) }
                 var showUpdateDialog by remember { mutableStateOf(false) }
                 var updateDownloadState by remember { mutableStateOf<UpdateDownloadState>(UpdateDownloadState.Idle) }
@@ -349,6 +390,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onEnterPiP = { enterPictureInPicture() },
+                                isInPipMode = isInPipMode,
                                 onNavigateBack = {
                                     saveCurrentPlaybackPosition()
                                     playerManager.pause()
@@ -1033,12 +1075,109 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun updatePipParams() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val isPlaying = playerManager.isPlaying.value
+            val actions = ArrayList<RemoteAction>()
+
+            val replayIntent = PendingIntent.getBroadcast(
+                this, 1, Intent(ACTION_PIP_SEEK).apply { putExtra("offset", -10_000L); `package` = packageName },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_rew),
+                "Rewind 10s", "Rewind 10s", replayIntent
+            ))
+
+            val playPauseIntent = PendingIntent.getBroadcast(
+                this, 2, Intent(ACTION_PIP_PLAY_PAUSE).apply { `package` = packageName },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, iconRes),
+                if (isPlaying) "Pause" else "Play", if (isPlaying) "Pause" else "Play", playPauseIntent
+            ))
+
+            val forwardIntent = PendingIntent.getBroadcast(
+                this, 3, Intent(ACTION_PIP_SEEK).apply { putExtra("offset", 10_000L); `package` = packageName },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_ff),
+                "Forward 10s", "Forward 10s", forwardIntent
+            ))
+
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
+                .setActions(actions)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(true)
+                builder.setSeamlessResizeEnabled(true)
+            }
+            try {
+                setPictureInPictureParams(builder.build())
+            } catch (_: Exception) {}
+        }
+    }
+
     private fun enterPictureInPicture() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder()
+            isInPipMode = true
+            val isPlaying = playerManager.isPlaying.value
+            val actions = ArrayList<RemoteAction>()
+
+            val replayIntent = PendingIntent.getBroadcast(
+                this, 1, Intent(ACTION_PIP_SEEK).apply { putExtra("offset", -10_000L); `package` = packageName },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_rew),
+                "Rewind 10s", "Rewind 10s", replayIntent
+            ))
+
+            val playPauseIntent = PendingIntent.getBroadcast(
+                this, 2, Intent(ACTION_PIP_PLAY_PAUSE).apply { `package` = packageName },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, iconRes),
+                if (isPlaying) "Pause" else "Play", if (isPlaying) "Pause" else "Play", playPauseIntent
+            ))
+
+            val forwardIntent = PendingIntent.getBroadcast(
+                this, 3, Intent(ACTION_PIP_SEEK).apply { putExtra("offset", 10_000L); `package` = packageName },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            actions.add(RemoteAction(
+                Icon.createWithResource(this, android.R.drawable.ic_media_ff),
+                "Forward 10s", "Forward 10s", forwardIntent
+            ))
+
+            val builder = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
-                .build()
-            enterPictureInPictureMode(params)
+                .setActions(actions)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(true)
+                builder.setSeamlessResizeEnabled(true)
+            }
+            enterPictureInPictureMode(builder.build())
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+        if (isInPictureInPictureMode) {
+            // Keep playing when entering PiP
+            if (playerManager.videoPlayer.mediaItemCount > 0 && !playerManager.videoPlayer.isPlaying) {
+                playerManager.play()
+            }
+            updatePipParams()
         }
     }
 
@@ -1075,6 +1214,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(pipReceiver)
+        } catch (_: Exception) {}
         saveCurrentPlaybackPosition()
         playerManager.release()
     }
