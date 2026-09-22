@@ -56,11 +56,11 @@ class PlayerPreferences(context: Context) {
 
     var preferredVoiceType: VoiceType
         get() {
-            val name = prefs.getString(KEY_VOICE_TYPE, VoiceType.LIVE_VOICE.name)
+            val name = prefs.getString(KEY_VOICE_TYPE, VoiceType.STANDARD.name)
             return try {
-                VoiceType.valueOf(name ?: VoiceType.LIVE_VOICE.name)
+                VoiceType.valueOf(name ?: VoiceType.STANDARD.name)
             } catch (_: Exception) {
-                VoiceType.LIVE_VOICE
+                VoiceType.STANDARD
             }
         }
         set(value) {

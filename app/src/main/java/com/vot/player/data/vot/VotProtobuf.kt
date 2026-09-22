@@ -123,19 +123,35 @@ object VotProtobuf {
         requestLang: String = "en",
         firstRequest: Boolean = true,
         useLivelyVoice: Boolean = false,
-        selectedVoice: String = ""
+        videoTitle: String = ""
     ): ByteArray {
         val out = ByteArrayOutputStream()
+        // Field 3: url
         writeString(out, 3, url)
+        // Field 5: firstRequest
         writeBool(out, 5, firstRequest)
+        // Field 6: duration
         val validDuration = if (duration <= 0.0) 300.0 else duration
         writeDouble(out, 6, validDuration)
+        // Field 7: unknown0 = true (required by modern Yandex VOT backend)
+        writeBool(out, 7, true)
+        // Field 8: requestLang / language
         writeString(out, 8, requestLang)
-        if (selectedVoice.isNotEmpty()) {
-            writeString(out, 13, selectedVoice)
-        }
+        // Field 14: responseLanguage
         writeString(out, 14, responseLang)
-        writeBool(out, 18, useLivelyVoice)
+        // Field 15: unknown2 = true (required by modern Yandex VOT backend)
+        writeBool(out, 15, true)
+        // Field 16: configVersion = 2 (standard in vot.js)
+        writeTag(out, 16, 0)
+        writeVarint(out, 2)
+        // Field 18: useLivelyVoice
+        if (useLivelyVoice) {
+            writeBool(out, 18, true)
+        }
+        // Field 19: videoTitle
+        if (videoTitle.isNotEmpty()) {
+            writeString(out, 19, videoTitle)
+        }
         return out.toByteArray()
     }
 

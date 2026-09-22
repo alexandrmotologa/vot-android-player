@@ -315,11 +315,67 @@ class VotApiClient(
         try {
             resetToPrimaryHost()
             val (normalizedUrl, videoId) = normalizeVideoUrl(videoUrl)
-            var firstRequest = true
             var attempts = 0
             val maxAttempts = 35
             var audioFallbackSent = false
             var currentTranslationId = ""
+            var stuckAtLowRemainingCounter = 0
+            var activeVoiceType = voiceType
+
+            // Quick check: If user requested LIVE_VOICE, probe LIVE_VOICE first.
+            // If it returns AUDIO_REQUESTED (status 6), SESSION_REQUIRED (status 7), or FAILED (status 0),
+            // immediately probe STANDARD voice because on Yandex, standard voice is usually already cached/ready!
+            if (activeVoiceType == VoiceType.LIVE_VOICE) {
+                try {
+                    val session = getOrCreateSession()
+                    val reqBytes = VotProtobuf.encodeTranslationRequest(
+                        url = normalizedUrl,
+                        duration = if (durationSeconds <= 0.0) 300.0 else durationSeconds,
+                        responseLang = targetLang.code,
+                        requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
+                        firstRequest = true,
+                        useLivelyVoice = true,
+                        videoTitle = videoTitle
+                    )
+                    val resp = executeYaRequest("/video-translation/translate", reqBytes, "Vtrans", session)
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.bytes()
+                        if (body != null) {
+                            val liveRes = VotProtobuf.decodeTranslationResponse(body)
+                            if (liveRes.isSuccess) {
+                                onProgress?.invoke("Live Voice translation ready!")
+                                return@withContext Result.success(liveRes)
+                            } else {
+                                // Live voice is not immediately available. Check if standard voice is already ready!
+                                val stdReqBytes = VotProtobuf.encodeTranslationRequest(
+                                    url = normalizedUrl,
+                                    duration = if (durationSeconds <= 0.0) 300.0 else durationSeconds,
+                                    responseLang = targetLang.code,
+                                    requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
+                                    firstRequest = true,
+                                    useLivelyVoice = false,
+                                    videoTitle = videoTitle
+                                )
+                                val stdResp = executeYaRequest("/video-translation/translate", stdReqBytes, "Vtrans", session)
+                                if (stdResp.isSuccessful) {
+                                    val stdBody = stdResp.body?.bytes()
+                                    if (stdBody != null) {
+                                        val stdRes = VotProtobuf.decodeTranslationResponse(stdBody)
+                                        if (stdRes.isSuccess) {
+                                            onProgress?.invoke("Translation ready!")
+                                            return@withContext Result.success(stdRes)
+                                        }
+                                    }
+                                }
+                                // If standard is also not ready, and live voice returned an error/unsupported/session_required/audio_requested, switch to standard
+                                if (liveRes.status == 7 || liveRes.isFailed || liveRes.isAudioRequested) {
+                                    activeVoiceType = VoiceType.STANDARD
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
 
             while (attempts < maxAttempts) {
                 attempts++
@@ -331,9 +387,9 @@ class VotApiClient(
                     duration = if (durationSeconds <= 0.0) 300.0 else durationSeconds,
                     responseLang = targetLang.code,
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
-                    firstRequest = firstRequest,
-                    useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE),
-                    selectedVoice = preferredVoice
+                    firstRequest = true,
+                    useLivelyVoice = (activeVoiceType == VoiceType.LIVE_VOICE),
+                    videoTitle = videoTitle
                 )
 
                 val response = executeYaRequest(
@@ -370,8 +426,27 @@ class VotApiClient(
                 if (result.isSuccess) {
                     onProgress?.invoke("Translation ready!")
                     return@withContext Result.success(result)
-                } else if (result.isAudioRequested) {
-                    firstRequest = false
+                }
+
+                // If remaining time is stuck at <= 5 seconds repeatedly
+                if (result.remainingTime in 1..5) {
+                    stuckAtLowRemainingCounter++
+                    if (stuckAtLowRemainingCounter >= 3) {
+                        if (activeVoiceType == VoiceType.LIVE_VOICE) {
+                            // Live voice failed to finalize from empty audio; switch to standard voice
+                            onProgress?.invoke("Falling back to standard voice-over...")
+                            activeVoiceType = VoiceType.STANDARD
+                            stuckAtLowRemainingCounter = 0
+                            audioFallbackSent = false
+                            delay(1000L)
+                            continue
+                        }
+                    }
+                } else if (result.remainingTime > 5) {
+                    stuckAtLowRemainingCounter = 0
+                }
+
+                if (result.isAudioRequested) {
                     if (videoId != null && !audioFallbackSent) {
                         audioFallbackSent = true
                         onProgress?.invoke("Preparing audio for Yandex neural translator...")
@@ -428,35 +503,29 @@ class VotApiClient(
                         } catch (_: Exception) {}
                         delay(2000L)
                     } else {
-                        val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 6) else 3
+                        val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 8) else 4
                         val remainingInfo = if (result.remainingTime > 0) " (~${result.remainingTime}s remaining)..." else "..."
                         onProgress?.invoke("Generating voice-over translation$remainingInfo")
                         delay(waitSec * 1000L)
                     }
                 } else if (result.isWaiting) {
-                    firstRequest = false
-                    val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 6) else 3
+                    val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 8) else 4
                     val remainingInfo = if (result.remainingTime > 0) " (~${result.remainingTime}s remaining)..." else "..."
                     onProgress?.invoke(
-                        if (voiceType == VoiceType.LIVE_VOICE) 
+                        if (activeVoiceType == VoiceType.LIVE_VOICE) 
                             "Generating Live Voice$remainingInfo"
                         else 
                             "Generating voice-over translation$remainingInfo"
                     )
                     delay(waitSec * 1000L)
-                } else if (result.isFailed) {
-                    if (voiceType == VoiceType.LIVE_VOICE || preferredVoice.isNotEmpty()) {
+                } else if (result.isFailed || result.status == 7) {
+                    if (activeVoiceType == VoiceType.LIVE_VOICE) {
                         onProgress?.invoke("Using standard voice-over...")
-                        return@withContext translateVideo(
-                            videoUrl = videoUrl,
-                            durationSeconds = durationSeconds,
-                            targetLang = targetLang,
-                            voiceType = VoiceType.STANDARD,
-                            preferredVoice = "",
-                            directAudioUrl = directAudioUrl,
-                            videoTitle = videoTitle,
-                            onProgress = onProgress
-                        )
+                        activeVoiceType = VoiceType.STANDARD
+                        stuckAtLowRemainingCounter = 0
+                        audioFallbackSent = false
+                        delay(1000L)
+                        continue
                     }
                     if (attempts <= hosts.size) {
                         rotateHost()
@@ -465,8 +534,7 @@ class VotApiClient(
                     }
                     return@withContext Result.failure(Exception(result.message ?: "Yandex translation failed for this video."))
                 } else {
-                    firstRequest = false
-                    delay(2000L)
+                    delay(2500L)
                 }
             }
 

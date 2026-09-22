@@ -673,13 +673,11 @@ class MainActivity : ComponentActivity() {
             currentTranslatedAudioUrl = translatedAudioUrl
             val votObj = votResult.getOrNull()
             if (votObj != null) {
-                if (votObj.message?.contains("обычная озвучка") == true) {
+                if (votObj.message?.contains("обычная озвучка") == true || (!votObj.isLivelyVoice && selectedVoiceType == VoiceType.LIVE_VOICE)) {
                     isLiveVoiceAvailable = false
-                    if (selectedVoiceType == VoiceType.LIVE_VOICE) {
-                        selectedVoiceType = VoiceType.STANDARD
-                        prefs.preferredVoiceType = VoiceType.STANDARD
-                    }
-                } else {
+                    selectedVoiceType = VoiceType.STANDARD
+                    prefs.preferredVoiceType = VoiceType.STANDARD
+                } else if (votObj.isLivelyVoice) {
                     isLiveVoiceAvailable = true
                 }
             }
