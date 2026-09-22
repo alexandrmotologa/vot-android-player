@@ -600,6 +600,17 @@ class MainActivity : ComponentActivity() {
                                 keepScreenOn = enabled
                                 prefs.keepScreenOn = enabled
                             },
+                            originalVolume = playerManager.originalVolume.collectAsState().value,
+                            voiceoverVolume = playerManager.voiceoverVolume.collectAsState().value,
+                            onOriginalVolumeChange = { vol ->
+                                playerManager.setOriginalVolume(vol)
+                                prefs.defaultOriginalVolume = vol
+                            },
+                            onVoiceoverVolumeChange = { vol ->
+                                playerManager.setVoiceoverVolume(vol)
+                                prefs.defaultVoiceoverVolume = vol
+                            },
+                            onToggleOriginalMute = { playerManager.toggleOriginalMute() },
                             isTranslationActive = isTranslationActive,
                             onTriggerTranslation = {
                                 triggerCurrentVideoTranslation()

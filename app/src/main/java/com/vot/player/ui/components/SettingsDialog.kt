@@ -65,6 +65,11 @@ fun SettingsDialog(
     hasRomanianSubtitles: Boolean = true,
     hasEnglishSubtitles: Boolean = true,
     isCustomVoiceSupported: Boolean = true,
+    originalVolume: Float? = null,
+    voiceoverVolume: Float? = null,
+    onOriginalVolumeChange: ((Float) -> Unit)? = null,
+    onVoiceoverVolumeChange: ((Float) -> Unit)? = null,
+    onToggleOriginalMute: (() -> Unit)? = null,
     onExportVideoClick: () -> Unit = {},
     onExportAudioClick: () -> Unit = {},
     onDismiss: () -> Unit
@@ -105,6 +110,11 @@ fun SettingsDialog(
         hasRomanianSubtitles = hasRomanianSubtitles,
         hasEnglishSubtitles = hasEnglishSubtitles,
         isCustomVoiceSupported = isCustomVoiceSupported,
+        originalVolume = originalVolume,
+        voiceoverVolume = voiceoverVolume,
+        onOriginalVolumeChange = onOriginalVolumeChange,
+        onVoiceoverVolumeChange = onVoiceoverVolumeChange,
+        onToggleOriginalMute = onToggleOriginalMute,
         onExportVideoClick = onExportVideoClick,
         onExportAudioClick = onExportAudioClick,
         onDismiss = onDismiss

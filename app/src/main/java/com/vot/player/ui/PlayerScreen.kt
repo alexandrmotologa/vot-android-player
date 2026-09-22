@@ -474,37 +474,34 @@ fun PlayerScreen(
             }
         }
 
-        // Subtitle Overlay
-        val screenHeightDp = configuration.screenHeightDp.dp
-        val screenWidthDp = configuration.screenWidthDp.dp
-        val videoHeightDp = screenWidthDp * 9f / 16f
-        val videoBottomDp = (screenHeightDp + videoHeightDp) / 2f
+        // Subtitle Overlay (hidden in PiP mode, automatically resumes on exit)
+        if (!isInPipMode) {
+            val screenHeightDp = configuration.screenHeightDp.dp
+            val screenWidthDp = configuration.screenWidthDp.dp
+            val videoHeightDp = screenWidthDp * 9f / 16f
+            val videoBottomDp = (screenHeightDp + videoHeightDp) / 2f
 
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = if (isInPipMode) Alignment.BottomCenter else if (isLandscape) Alignment.BottomCenter else Alignment.TopCenter
-        ) {
-            SubtitleOverlay(
-                subtitleText = currentSubtitle,
-                modifier = if (isInPipMode) {
-                    Modifier
-                        .navigationBarsPadding()
-                        .padding(bottom = 6.dp)
-                        .padding(horizontal = 8.dp)
-                } else if (isLandscape) {
-                    Modifier
-                        .navigationBarsPadding()
-                        .displayCutoutPadding()
-                        .padding(bottom = if (showControls) 120.dp else 28.dp)
-                        .padding(horizontal = 24.dp)
-                } else {
-                    // In portrait orientation, video is centered (16:9).
-                    // Position subtitle cleanly OUTSIDE the video frame in the letterbox space right below the video!
-                    Modifier
-                        .padding(top = videoBottomDp + 18.dp)
-                        .padding(horizontal = 20.dp)
-                }
-            )
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = if (isLandscape) Alignment.BottomCenter else Alignment.TopCenter
+            ) {
+                SubtitleOverlay(
+                    subtitleText = currentSubtitle,
+                    modifier = if (isLandscape) {
+                        Modifier
+                            .navigationBarsPadding()
+                            .displayCutoutPadding()
+                            .padding(bottom = if (showControls) 120.dp else 28.dp)
+                            .padding(horizontal = 24.dp)
+                    } else {
+                        // In portrait orientation, video is centered (16:9).
+                        // Position subtitle cleanly OUTSIDE the video frame in the letterbox space right below the video!
+                        Modifier
+                            .padding(top = videoBottomDp + 18.dp)
+                            .padding(horizontal = 20.dp)
+                    }
+                )
+            }
         }
 
         // Loading or Status banner
@@ -899,17 +896,6 @@ fun PlayerScreen(
                             modifier = Modifier.width(46.dp)
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(if (isLandscape) 4.dp else 6.dp))
-
-                    // Dual Volume Bar
-                    DualVolumeBar(
-                        originalVolume = originalVolume,
-                        voiceoverVolume = voiceoverVolume,
-                        onOriginalVolumeChange = { playerManager.setOriginalVolume(it) },
-                        onVoiceoverVolumeChange = { playerManager.setVoiceoverVolume(it) },
-                        onToggleOriginalMute = { playerManager.toggleOriginalMute() }
-                    )
                 }
             }
         }
@@ -1056,6 +1042,17 @@ fun PlayerScreen(
                 onSponsorBlockChange = onSponsorBlockChange,
                 keepScreenOn = keepScreenOn,
                 onKeepScreenOnChange = onKeepScreenOnChange,
+                originalVolume = originalVolume,
+                voiceoverVolume = voiceoverVolume,
+                onOriginalVolumeChange = { vol ->
+                    playerManager.setOriginalVolume(vol)
+                    com.vot.player.data.pref.PlayerPreferences.getInstance(context).defaultOriginalVolume = vol
+                },
+                onVoiceoverVolumeChange = { vol ->
+                    playerManager.setVoiceoverVolume(vol)
+                    com.vot.player.data.pref.PlayerPreferences.getInstance(context).defaultVoiceoverVolume = vol
+                },
+                onToggleOriginalMute = { playerManager.toggleOriginalMute() },
                 isAudioOnly = isAudioOnly,
                 onToggleAudioOnly = { playerManager.toggleAudioOnly() },
                 preferredPlayerMode = preferredPlayerMode,

@@ -48,13 +48,13 @@ class YouTubeStreamExtractor(
                 null
             }
 
-            // Attempt 1: ANDROID client 21.26.364 (primary, avoids bot detection & provides direct MP4 streams)
+            // Attempt 1: ANDROID client 20.10.35 (primary, provides all available video qualities 2160p down to 144p + direct audio)
             val primaryRequestJson = JSONObject().apply {
                 put("videoId", videoId)
                 put("context", JSONObject().apply {
                     put("client", JSONObject().apply {
                         put("clientName", "ANDROID")
-                        put("clientVersion", "21.26.364")
+                        put("clientVersion", "20.10.35")
                         put("androidSdkVersion", 30)
                         put("osName", "Android")
                         put("osVersion", "11")
@@ -67,9 +67,9 @@ class YouTubeStreamExtractor(
             val reqBuilder = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/player")
                 .post(primaryRequestJson.toString().toRequestBody("application/json".toMediaType()))
-                .header("User-Agent", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip")
+                .header("User-Agent", "com.google.android.youtube/20.10.35 (Linux; U; Android 11) gzip")
                 .header("X-YouTube-Client-Name", "3")
-                .header("X-YouTube-Client-Version", "21.26.364")
+                .header("X-YouTube-Client-Version", "20.10.35")
             if (!cookie.isNullOrEmpty()) {
                 reqBuilder.header("Cookie", cookie)
             }
@@ -85,14 +85,22 @@ class YouTubeStreamExtractor(
             var videoDetails = json?.optJSONObject("videoDetails")
             var streamingData = json?.optJSONObject("streamingData")
 
-            // Attempt 2: Fallback to ANDROID client 20.10.35 if primary failed or has no formats
-            if (streamingData == null || (streamingData.optJSONArray("formats") == null && streamingData.optJSONArray("adaptiveFormats") == null)) {
+            val hasDirectUrls = streamingData?.let { sd ->
+                val fmts = sd.optJSONArray("formats")
+                val adaptive = sd.optJSONArray("adaptiveFormats")
+                val hasFmtUrl = (0 until (fmts?.length() ?: 0)).any { fmts!!.getJSONObject(it).optString("url").isNotEmpty() }
+                val hasAdUrl = (0 until (adaptive?.length() ?: 0)).any { adaptive!!.getJSONObject(it).optString("url").isNotEmpty() }
+                hasFmtUrl || hasAdUrl
+            } ?: false
+
+            // Attempt 2: Fallback to ANDROID client 21.26.364 if primary failed or has no playable stream URLs
+            if (streamingData == null || !hasDirectUrls) {
                 val fallbackRequestJson = JSONObject().apply {
                     put("videoId", videoId)
                     put("context", JSONObject().apply {
                         put("client", JSONObject().apply {
                             put("clientName", "ANDROID")
-                            put("clientVersion", "20.10.35")
+                            put("clientVersion", "21.26.364")
                             put("androidSdkVersion", 30)
                             put("osName", "Android")
                             put("osVersion", "11")
@@ -104,9 +112,9 @@ class YouTubeStreamExtractor(
                 val fbReqBuilder = Request.Builder()
                     .url("https://www.youtube.com/youtubei/v1/player")
                     .post(fallbackRequestJson.toString().toRequestBody("application/json".toMediaType()))
-                    .header("User-Agent", "com.google.android.youtube/20.10.35 (Linux; U; Android 11) gzip")
+                    .header("User-Agent", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip")
                     .header("X-YouTube-Client-Name", "3")
-                    .header("X-YouTube-Client-Version", "20.10.35")
+                    .header("X-YouTube-Client-Version", "21.26.364")
                 if (!cookie.isNullOrEmpty()) {
                     fbReqBuilder.header("Cookie", cookie)
                 }

@@ -51,10 +51,12 @@ class VotPlayerManager(
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
-    private val _originalVolume = MutableStateFlow(0.20f)
+    private val prefs = com.vot.player.data.pref.PlayerPreferences.getInstance(context)
+
+    private val _originalVolume = MutableStateFlow(prefs.defaultOriginalVolume)
     val originalVolume: StateFlow<Float> = _originalVolume.asStateFlow()
 
-    private val _voiceoverVolume = MutableStateFlow(1.0f)
+    private val _voiceoverVolume = MutableStateFlow(prefs.defaultVoiceoverVolume)
     val voiceoverVolume: StateFlow<Float> = _voiceoverVolume.asStateFlow()
 
     private val _hasSubtitles = MutableStateFlow(false)
@@ -210,7 +212,8 @@ class VotPlayerManager(
             _durationMs.value = 0L
         }
 
-        val defaultQuality = videoInfo.availableQualities.firstOrNull()
+        val defaultQuality = videoInfo.availableQualities.firstOrNull { it.height in 720..1080 }
+            ?: videoInfo.availableQualities.firstOrNull()
         _selectedQuality.value = defaultQuality
 
         setupVideoSource(

@@ -31,6 +31,8 @@ class PlayerPreferences(context: Context) {
         private const val KEY_TRANSLATION_TRIGGER = "pref_translation_trigger"
         private const val KEY_SKIP_RUSSIAN = "pref_skip_russian"
         private const val KEY_KEEP_SCREEN_ON = "pref_keep_screen_on"
+        private const val KEY_DEFAULT_ORIGINAL_VOLUME = "pref_default_original_volume"
+        private const val KEY_DEFAULT_VOICEOVER_VOLUME = "pref_default_voiceover_volume"
 
         @Volatile
         private var instance: PlayerPreferences? = null
@@ -117,4 +119,12 @@ class PlayerPreferences(context: Context) {
     var keepScreenOn: Boolean
         get() = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true)
         set(value) = prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, value).apply()
+
+    var defaultOriginalVolume: Float
+        get() = prefs.getFloat(KEY_DEFAULT_ORIGINAL_VOLUME, 0.0f)
+        set(value) = prefs.edit().putFloat(KEY_DEFAULT_ORIGINAL_VOLUME, value).apply()
+
+    var defaultVoiceoverVolume: Float
+        get() = prefs.getFloat(KEY_DEFAULT_VOICEOVER_VOLUME, 1.0f)
+        set(value) = prefs.edit().putFloat(KEY_DEFAULT_VOICEOVER_VOLUME, value).apply()
 }
