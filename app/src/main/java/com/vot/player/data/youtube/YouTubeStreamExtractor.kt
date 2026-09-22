@@ -42,61 +42,60 @@ class YouTubeStreamExtractor(
             val videoId = extractVideoId(rawUrl)
                 ?: return@withContext Result.failure(IllegalArgumentException("Invalid YouTube URL: $rawUrl"))
 
-            val requestJson = JSONObject().apply {
-                put("videoId", videoId)
-                put("context", JSONObject().apply {
-                    put("client", JSONObject().apply {
-                        put("clientName", "ANDROID_VR")
-                        put("clientVersion", "1.60.19")
-                        put("deviceMake", "Oculus")
-                        put("deviceModel", "Quest 3")
-                        put("osName", "Android")
-                        put("osVersion", "12")
-                        put("hl", "en")
-                        put("gl", "US")
-                    })
-                })
-            }
-
             val cookie = try {
                 android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com")
             } catch (e: Exception) {
                 null
             }
 
+            // Attempt 1: ANDROID client 21.26.364 (primary, avoids bot detection & provides direct MP4 streams)
+            val primaryRequestJson = JSONObject().apply {
+                put("videoId", videoId)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "ANDROID")
+                        put("clientVersion", "21.26.364")
+                        put("androidSdkVersion", 30)
+                        put("osName", "Android")
+                        put("osVersion", "11")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+            }
+
             val reqBuilder = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/player")
-                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .post(primaryRequestJson.toString().toRequestBody("application/json".toMediaType()))
+                .header("User-Agent", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip")
+                .header("X-YouTube-Client-Name", "3")
+                .header("X-YouTube-Client-Version", "21.26.364")
             if (!cookie.isNullOrEmpty()) {
                 reqBuilder.header("Cookie", cookie)
             }
             val request = reqBuilder.build()
 
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string()
-                ?: return@withContext Result.failure(Exception("Empty YouTube API response"))
+            var responseBody: String? = null
+            try {
+                val response = client.newCall(request).execute()
+                responseBody = response.body?.string()
+            } catch (_: Exception) {}
 
-            val json = JSONObject(responseBody)
-            val videoDetails = json.optJSONObject("videoDetails")
-                ?: return@withContext Result.failure(Exception("Video details not found"))
+            var json = if (!responseBody.isNullOrEmpty()) JSONObject(responseBody) else null
+            var videoDetails = json?.optJSONObject("videoDetails")
+            var streamingData = json?.optJSONObject("streamingData")
 
-            var streamingData = json.optJSONObject("streamingData")
-            var title = videoDetails.optString("title", "YouTube Video")
-            var author = videoDetails.optString("author", "Unknown Channel")
-            var durationSeconds = videoDetails.optString("lengthSeconds", "0").toLongOrNull() ?: 0L
-            val thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-
-            // If ANDROID_VR didn't yield formats, retry with ANDROID client
+            // Attempt 2: Fallback to ANDROID client 20.10.35 if primary failed or has no formats
             if (streamingData == null || (streamingData.optJSONArray("formats") == null && streamingData.optJSONArray("adaptiveFormats") == null)) {
                 val fallbackRequestJson = JSONObject().apply {
                     put("videoId", videoId)
                     put("context", JSONObject().apply {
                         put("client", JSONObject().apply {
                             put("clientName", "ANDROID")
-                            put("clientVersion", "19.09.37")
+                            put("clientVersion", "20.10.35")
+                            put("androidSdkVersion", 30)
                             put("osName", "Android")
-                            put("osVersion", "14")
+                            put("osVersion", "11")
                             put("hl", "en")
                             put("gl", "US")
                         })
@@ -105,24 +104,74 @@ class YouTubeStreamExtractor(
                 val fbReqBuilder = Request.Builder()
                     .url("https://www.youtube.com/youtubei/v1/player")
                     .post(fallbackRequestJson.toString().toRequestBody("application/json".toMediaType()))
-                    .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip")
+                    .header("User-Agent", "com.google.android.youtube/20.10.35 (Linux; U; Android 11) gzip")
+                    .header("X-YouTube-Client-Name", "3")
+                    .header("X-YouTube-Client-Version", "20.10.35")
                 if (!cookie.isNullOrEmpty()) {
                     fbReqBuilder.header("Cookie", cookie)
                 }
-                val fbRequest = fbReqBuilder.build()
-                val fbResponse = client.newCall(fbRequest).execute()
-                val fbBody = fbResponse.body?.string()
-                if (!fbBody.isNullOrEmpty()) {
-                    val fbJson = JSONObject(fbBody)
-                    val fbDetails = fbJson.optJSONObject("videoDetails")
-                    if (fbDetails != null) {
-                        title = fbDetails.optString("title", title)
-                        author = fbDetails.optString("author", author)
-                        durationSeconds = fbDetails.optString("lengthSeconds", durationSeconds.toString()).toLongOrNull() ?: durationSeconds
+                try {
+                    val fbResponse = client.newCall(fbReqBuilder.build()).execute()
+                    val fbBody = fbResponse.body?.string()
+                    if (!fbBody.isNullOrEmpty()) {
+                        val fbJson = JSONObject(fbBody)
+                        if (videoDetails == null) {
+                            videoDetails = fbJson.optJSONObject("videoDetails")
+                        }
+                        val fbStreaming = fbJson.optJSONObject("streamingData")
+                        if (fbStreaming != null) {
+                            streamingData = fbStreaming
+                        }
                     }
-                    streamingData = fbJson.optJSONObject("streamingData")
-                }
+                } catch (_: Exception) {}
             }
+
+            // Attempt 3: Fallback to IOS client 21.26.4
+            if (streamingData == null || (streamingData.optJSONArray("formats") == null && streamingData.optJSONArray("adaptiveFormats") == null)) {
+                val iosRequestJson = JSONObject().apply {
+                    put("videoId", videoId)
+                    put("context", JSONObject().apply {
+                        put("client", JSONObject().apply {
+                            put("clientName", "IOS")
+                            put("clientVersion", "21.26.4")
+                            put("deviceMake", "Apple")
+                            put("deviceModel", "iPhone16,2")
+                            put("osName", "iPhone")
+                            put("osVersion", "18.3.2.22D82")
+                            put("hl", "en")
+                            put("gl", "US")
+                        })
+                    })
+                }
+                val iosReqBuilder = Request.Builder()
+                    .url("https://www.youtube.com/youtubei/v1/player")
+                    .post(iosRequestJson.toString().toRequestBody("application/json".toMediaType()))
+                    .header("User-Agent", "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)")
+                    .header("X-YouTube-Client-Name", "5")
+                    .header("X-YouTube-Client-Version", "21.26.4")
+                if (!cookie.isNullOrEmpty()) {
+                    iosReqBuilder.header("Cookie", cookie)
+                }
+                try {
+                    val iosResponse = client.newCall(iosReqBuilder.build()).execute()
+                    val iosBody = iosResponse.body?.string()
+                    if (!iosBody.isNullOrEmpty()) {
+                        val iosJson = JSONObject(iosBody)
+                        if (videoDetails == null) {
+                            videoDetails = iosJson.optJSONObject("videoDetails")
+                        }
+                        val iosStreaming = iosJson.optJSONObject("streamingData")
+                        if (iosStreaming != null) {
+                            streamingData = iosStreaming
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            var title = videoDetails?.optString("title", "YouTube Video") ?: "YouTube Video"
+            var author = videoDetails?.optString("author", "Unknown Channel") ?: "Unknown Channel"
+            var durationSeconds = videoDetails?.optString("lengthSeconds", "0")?.toLongOrNull() ?: 0L
+            val thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
             if (streamingData == null) {
                 return@withContext Result.failure(Exception("Streaming formats not found. Video may be restricted."))

@@ -324,7 +324,7 @@ class MainActivity : ComponentActivity() {
                                 videoTitle = info.title,
                                 videoAuthor = info.author,
                                 thumbnailUrl = info.thumbnailUrl,
-                                embeddedUrl = if (info.streamUrl.startsWith("http")) info.streamUrl else null,
+                                embeddedUrl = if (info.streamUrl.startsWith("http") && (info.streamUrl.contains("/embed/") || info.streamUrl.contains("youtube-nocookie.com"))) info.streamUrl else null,
                                 statusMessage = statusMessage,
                                 isLoading = isLoading,
                                 onDismissStatus = {
@@ -912,14 +912,14 @@ class MainActivity : ComponentActivity() {
             if (streamResult.isFailure) {
                 playerManager.stopVideo()
                 if (videoId != null) {
-                    val webUrl = "https://m.youtube.com/watch?v=$videoId"
+                    val embedUrl = "https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&enablejsapi=1&playsinline=1&controls=0&rel=0&modestbranding=1"
                     val fallbackInfo = UniversalVideoInfo(
                         id = videoId,
                         rawUrl = rawUrl,
                         title = "YouTube Video",
                         author = "YouTube",
                         durationSeconds = 0L,
-                        streamUrl = webUrl,
+                        streamUrl = embedUrl,
                         thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                         platform = PlatformType.YOUTUBE
                     )
