@@ -121,7 +121,9 @@ object VotProtobuf {
     ): ByteArray {
         val out = ByteArrayOutputStream()
         writeString(out, 3, url)
-        writeBool(out, 5, firstRequest)
+        if (firstRequest) {
+            writeBool(out, 5, true)
+        }
         val validDuration = if (duration <= 0.0) 300.0 else duration
         writeDouble(out, 6, validDuration)
         writeBool(out, 7, true) // unknown0 = true (CRITICAL for Yandex VOT protocol)
@@ -136,6 +138,32 @@ object VotProtobuf {
         if (videoTitle.isNotEmpty()) {
             writeString(out, 19, videoTitle)
         }
+        return out.toByteArray()
+    }
+
+    fun encodeTranslationAudioRequest(
+        url: String,
+        translationId: String,
+        fileId: String,
+        audioBytes: ByteArray = ByteArray(0)
+    ): ByteArray {
+        val out = ByteArrayOutputStream()
+        writeString(out, 1, translationId)
+        writeString(out, 2, url)
+
+        // Field 6: AudioBufferObject
+        val audioBufOut = ByteArrayOutputStream()
+        writeString(audioBufOut, 1, fileId)
+        if (audioBytes.isNotEmpty()) {
+            writeTag(audioBufOut, 2, 2)
+            writeVarint(audioBufOut, audioBytes.size.toLong())
+            audioBufOut.write(audioBytes)
+        }
+        val audioBufBytes = audioBufOut.toByteArray()
+        writeTag(out, 6, 2)
+        writeVarint(out, audioBufBytes.size.toLong())
+        out.write(audioBufBytes)
+
         return out.toByteArray()
     }
 

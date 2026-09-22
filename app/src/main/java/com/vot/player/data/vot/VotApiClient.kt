@@ -43,19 +43,52 @@ class VotApiClient(
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build(),
-    private val workerHosts: List<String> = listOf("vot-worker.vtrans.eu.cc", "vot-worker.eu.cc")
+    private val hosts: List<String> = listOf(
+        "api.browser.yandex.ru",
+        "vot-worker.vtrans.eu.cc",
+        "vot-worker.toil.cc",
+        "vot-worker.eu.cc"
+    )
 ) {
     private var currentHostIndex = 0
-    private val workerHost: String get() = workerHosts[currentHostIndex % workerHosts.size]
+    private val currentHost: String get() = hosts[currentHostIndex % hosts.size]
+    private val isDirectHost: Boolean get() = currentHost == DIRECT_HOST
 
     private fun rotateHost() {
-        currentHostIndex = (currentHostIndex + 1) % workerHosts.size
+        activeSession = null
+        currentHostIndex = (currentHostIndex + 1) % hosts.size
+    }
+
+    private fun resetToPrimaryHost() {
+        if (currentHostIndex != 0) {
+            currentHostIndex = 0
+            activeSession = null
+        }
     }
 
     companion object {
+        private const val DIRECT_HOST = "api.browser.yandex.ru"
         private const val HMAC_KEY = "bt8xH3VOlb4mqf0nqAibnDOoiPlXsisf"
-        private const val COMPONENT_VERSION = "26.8.3.971"
+        private const val COMPONENT_VERSION = "26.8.3.1002"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 YaBrowser/26.8.0.0 Safari/537.36"
+        private const val SEC_CH_UA = "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"YaBrowser\";v=\"26.8\", \"Yowser\";v=\"2.5\""
+        private const val SEC_CH_UA_FULL_VERSION_LIST = "\"Not;A=Brand\";v=\"8.0.0.0\", \"Chromium\";v=\"150.0.7871.1002\", \"YaBrowser\";v=\"26.8.3.1002\", \"Yowser\";v=\"2.5\""
+
+        fun normalizeVideoUrl(rawUrl: String): Pair<String, String?> {
+            val trimmed = rawUrl.trim()
+            val patterns = listOf(
+                Pattern.compile("(?:v=|/v/|youtu\\.be/|/embed/|/shorts/)([a-zA-Z0-9_-]{11})"),
+                Pattern.compile("^([a-zA-Z0-9_-]{11})$")
+            )
+            for (p in patterns) {
+                val m = p.matcher(trimmed)
+                if (m.find()) {
+                    val id = m.group(1)
+                    return Pair("https://youtu.be/$id", id)
+                }
+            }
+            return Pair(trimmed, null)
+        }
     }
 
     private data class SessionData(
@@ -92,6 +125,84 @@ class VotApiClient(
         return "{$escaped}"
     }
 
+    private fun executeYaRequest(
+        path: String,
+        body: ByteArray,
+        secType: String = "Vtrans",
+        session: SessionData,
+        method: String = "POST",
+        contentType: String = "application/x-protobuf",
+        acceptType: String = "application/x-protobuf",
+        withSecHeaders: Boolean = true
+    ): okhttp3.Response {
+        val host = currentHost
+        val reqBuilder = Request.Builder()
+            .url("https://$host$path")
+
+        if (withSecHeaders) {
+            val token = "${session.uuid}:$path:$COMPONENT_VERSION"
+            val tokenSign = signHmacSha256(token.toByteArray(Charsets.UTF_8))
+            val bodySign = signHmacSha256(body)
+
+            if (host == DIRECT_HOST) {
+                reqBuilder
+                    .header("User-Agent", USER_AGENT)
+                    .header("Content-Type", contentType)
+                    .header("Accept", acceptType)
+                    .header("$secType-Signature", bodySign)
+                    .header("Sec-$secType-Token", "$tokenSign:$token")
+                    .header("Sec-$secType-Sk", session.secretKey)
+                    .header("sec-ch-ua", SEC_CH_UA)
+                    .header("sec-ch-ua-full-version-list", SEC_CH_UA_FULL_VERSION_LIST)
+                    .header("Sec-Fetch-Mode", "no-cors")
+            } else {
+                val innerHeaders = buildJsonHeaders(
+                    "Accept" to acceptType,
+                    "Content-Type" to contentType,
+                    "User-Agent" to USER_AGENT,
+                    "Sec-$secType-Token" to "$tokenSign:$token",
+                    "Sec-$secType-Sk" to session.secretKey,
+                    "$secType-Signature" to bodySign
+                )
+                val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
+                reqBuilder
+                    .header("User-Agent", "vot.js/3.1.2")
+                    .header("Content-Type", contentType)
+                    .header("X-VOT-Headers", encodedHeaders)
+            }
+        } else {
+            if (host == DIRECT_HOST) {
+                reqBuilder
+                    .header("User-Agent", USER_AGENT)
+                    .header("Content-Type", contentType)
+                    .header("Accept", acceptType)
+                    .header("sec-ch-ua", SEC_CH_UA)
+                    .header("sec-ch-ua-full-version-list", SEC_CH_UA_FULL_VERSION_LIST)
+                    .header("Sec-Fetch-Mode", "no-cors")
+            } else {
+                val innerHeaders = buildJsonHeaders(
+                    "Accept" to acceptType,
+                    "Content-Type" to contentType,
+                    "User-Agent" to USER_AGENT
+                )
+                val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
+                reqBuilder
+                    .header("User-Agent", "vot.js/3.1.2")
+                    .header("Content-Type", contentType)
+                    .header("X-VOT-Headers", encodedHeaders)
+            }
+        }
+
+        val requestBody = body.toRequestBody(contentType.toMediaType())
+        when (method.uppercase()) {
+            "PUT" -> reqBuilder.put(requestBody)
+            "POST" -> reqBuilder.post(requestBody)
+            "GET" -> reqBuilder.get()
+        }
+
+        return okHttpClient.newCall(reqBuilder.build()).execute()
+    }
+
     private suspend fun getOrCreateSession(): SessionData = withContext(Dispatchers.IO) {
         val current = activeSession
         val now = System.currentTimeMillis()
@@ -100,30 +211,41 @@ class VotApiClient(
         }
 
         var lastException: Exception? = null
-        for (i in workerHosts.indices) {
-            val host = workerHosts[currentHostIndex % workerHosts.size]
+        for (i in hosts.indices) {
+            val host = currentHost
             try {
                 val uuid = generateUUID()
                 val sessionBody = VotProtobuf.encodeSessionRequest(uuid, "video-translation")
                 val bodySign = signHmacSha256(sessionBody)
 
-                val innerHeaders = buildJsonHeaders(
-                    "Accept" to "application/x-protobuf",
-                    "Content-Type" to "application/x-protobuf",
-                    "User-Agent" to USER_AGENT,
-                    "Vtrans-Signature" to bodySign
-                )
-
-                val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
-
-                val request = Request.Builder()
+                val reqBuilder = Request.Builder()
                     .url("https://$host/session/create")
-                    .post(sessionBody.toRequestBody("application/x-protobuf".toMediaType()))
-                    .header("User-Agent", "vot.js/3.1.0")
-                    .header("X-VOT-Headers", encodedHeaders)
-                    .build()
 
-                val response = okHttpClient.newCall(request).execute()
+                if (host == DIRECT_HOST) {
+                    reqBuilder
+                        .header("User-Agent", USER_AGENT)
+                        .header("Content-Type", "application/x-protobuf")
+                        .header("Accept", "application/x-protobuf")
+                        .header("Vtrans-Signature", bodySign)
+                        .header("sec-ch-ua", SEC_CH_UA)
+                        .header("sec-ch-ua-full-version-list", SEC_CH_UA_FULL_VERSION_LIST)
+                        .header("Sec-Fetch-Mode", "no-cors")
+                } else {
+                    val innerHeaders = buildJsonHeaders(
+                        "Accept" to "application/x-protobuf",
+                        "Content-Type" to "application/x-protobuf",
+                        "User-Agent" to USER_AGENT,
+                        "Vtrans-Signature" to bodySign
+                    )
+                    val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
+                    reqBuilder
+                        .header("User-Agent", "vot.js/3.1.2")
+                        .header("Content-Type", "application/x-protobuf")
+                        .header("X-VOT-Headers", encodedHeaders)
+                }
+
+                reqBuilder.post(sessionBody.toRequestBody("application/x-protobuf".toMediaType()))
+                val response = okHttpClient.newCall(reqBuilder.build()).execute()
                 if (!response.isSuccessful) {
                     rotateHost()
                     continue
@@ -157,58 +279,42 @@ class VotApiClient(
         onProgress: ((String) -> Unit)? = null
     ): Result<VotTranslationResult> = withContext(Dispatchers.IO) {
         try {
+            resetToPrimaryHost()
+            val (normalizedUrl, videoId) = normalizeVideoUrl(videoUrl)
             var firstRequest = true
             var attempts = 0
             val maxAttempts = 35
+            var audioFallbackSent = false
 
             while (attempts < maxAttempts) {
                 attempts++
                 val session = getOrCreateSession()
                 val path = "/video-translation/translate"
-                val token = "${session.uuid}:$path:$COMPONENT_VERSION"
-                val tokenSign = signHmacSha256(token.toByteArray(Charsets.UTF_8))
 
                 val requestBytes = VotProtobuf.encodeTranslationRequest(
-                    url = videoUrl,
+                    url = normalizedUrl,
                     duration = if (durationSeconds <= 0.0) 300.0 else durationSeconds,
                     responseLang = targetLang.code,
                     requestLang = if (targetLang == TargetLanguage.RUSSIAN) "en" else "ru",
                     firstRequest = firstRequest,
                     useLivelyVoice = (voiceType == VoiceType.LIVE_VOICE)
                 )
-                firstRequest = false
 
-                val bodySign = signHmacSha256(requestBytes)
-
-                val innerHeaders = buildJsonHeaders(
-                    "Accept" to "application/x-protobuf",
-                    "Content-Type" to "application/x-protobuf",
-                    "User-Agent" to USER_AGENT,
-                    "Sec-Vtrans-Token" to "$tokenSign:$token",
-                    "Sec-Vtrans-Sk" to session.secretKey,
-                    "Vtrans-Signature" to bodySign
+                val response = executeYaRequest(
+                    path = path,
+                    body = requestBytes,
+                    secType = "Vtrans",
+                    session = session
                 )
 
-                val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
-
-                val request = Request.Builder()
-                    .url("https://$workerHost$path")
-                    .post(requestBytes.toRequestBody("application/x-protobuf".toMediaType()))
-                    .header("User-Agent", "vot.js/3.1.0")
-                    .header("X-VOT-Headers", encodedHeaders)
-                    .build()
-
-                val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     val code = response.code
                     rotateHost()
                     if (code == 429) {
-                        // Rate limit backoff
                         delay(minOf(attempts * 2500L, 8000L))
                     } else if (code in 500..599) {
                         delay(minOf(attempts * 1500L, 5000L))
                     } else {
-                        // HTTP 400 or other client error: reset session and backoff
                         activeSession = null
                         delay(minOf(attempts * 1200L, 4000L))
                     }
@@ -224,8 +330,51 @@ class VotApiClient(
                 if (result.isSuccess) {
                     onProgress?.invoke("Translation ready!")
                     return@withContext Result.success(result)
+                } else if (result.isAudioRequested) {
+                    firstRequest = false
+                    if (videoId != null && !audioFallbackSent) {
+                        audioFallbackSent = true
+                        onProgress?.invoke("Queueing audio with Yandex neural translator...")
+                        try {
+                            // 1. Send fail-audio-js PUT (without Vtrans signature headers)
+                            val failJson = JSONObject().apply {
+                                put("video_url", normalizedUrl)
+                            }.toString().toByteArray(Charsets.UTF_8)
+                            executeYaRequest(
+                                path = "/video-translation/fail-audio-js",
+                                body = failJson,
+                                session = session,
+                                method = "PUT",
+                                contentType = "application/json",
+                                acceptType = "application/json",
+                                withSecHeaders = false
+                            )
+
+                            // 2. Send fallback audio PUT
+                            val fileId = "fallback-empty-audio:video-translation:$videoId"
+                            val audioReqBytes = VotProtobuf.encodeTranslationAudioRequest(
+                                url = normalizedUrl,
+                                translationId = result.translationId,
+                                fileId = fileId
+                            )
+                            executeYaRequest(
+                                path = "/video-translation/audio",
+                                body = audioReqBytes,
+                                secType = "Vtrans",
+                                session = session,
+                                method = "PUT"
+                            )
+                        } catch (_: Exception) {}
+                        delay(2000L)
+                    } else {
+                        val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 6) else 3
+                        val remainingInfo = if (result.remainingTime > 0) " (~${result.remainingTime}s remaining)..." else "..."
+                        onProgress?.invoke("Generating voice-over translation$remainingInfo")
+                        delay(waitSec * 1000L)
+                    }
                 } else if (result.isWaiting) {
-                    val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 8) else 3
+                    firstRequest = false
+                    val waitSec = if (result.remainingTime > 0) result.remainingTime.coerceIn(3, 6) else 3
                     val remainingInfo = if (result.remainingTime > 0) " (~${result.remainingTime}s remaining)..." else "..."
                     onProgress?.invoke(
                         if (voiceType == VoiceType.LIVE_VOICE) 
@@ -248,6 +397,7 @@ class VotApiClient(
                     }
                     return@withContext Result.failure(Exception(result.message ?: "Yandex translation failed for this video."))
                 } else {
+                    firstRequest = false
                     delay(2000L)
                 }
             }
@@ -261,42 +411,28 @@ class VotApiClient(
     suspend fun getMultiSubtitles(
         videoUrl: String
     ): Result<MultiSubtitles> = withContext(Dispatchers.IO) {
+        resetToPrimaryHost()
+        val (normalizedUrl, _) = normalizeVideoUrl(videoUrl)
         var ruCues: List<SubtitleCue> = emptyList()
         var roCues: List<SubtitleCue> = emptyList()
         var enCues: List<SubtitleCue> = emptyList()
 
-        // 1. Try Yandex subtitles API via VOT worker
+        // 1. Try Yandex subtitles API with Vsubs headers
         try {
             val session = getOrCreateSession()
             val path = "/video-subtitles/get-subtitles"
-            val token = "${session.uuid}:$path:$COMPONENT_VERSION"
-            val tokenSign = signHmacSha256(token.toByteArray(Charsets.UTF_8))
-
             val requestBytes = VotProtobuf.encodeSubtitlesRequest(
-                url = videoUrl,
+                url = normalizedUrl,
                 language = "en"
             )
-            val bodySign = signHmacSha256(requestBytes)
 
-            val innerHeaders = buildJsonHeaders(
-                "Accept" to "application/x-protobuf",
-                "Content-Type" to "application/x-protobuf",
-                "User-Agent" to USER_AGENT,
-                "Sec-Vsubs-Token" to "$tokenSign:$token",
-                "Sec-Vsubs-Sk" to session.secretKey,
-                "Vsubs-Signature" to bodySign
+            val response = executeYaRequest(
+                path = path,
+                body = requestBytes,
+                secType = "Vsubs",
+                session = session
             )
 
-            val encodedHeaders = encodeBase64(innerHeaders.toByteArray(Charsets.UTF_8))
-
-            val request = Request.Builder()
-                .url("https://$workerHost$path")
-                .post(requestBytes.toRequestBody("application/x-protobuf".toMediaType()))
-                .header("User-Agent", "vot.js/3.1.0")
-                .header("X-VOT-Headers", encodedHeaders)
-                .build()
-
-            val response = okHttpClient.newCall(request).execute()
             if (response.isSuccessful) {
                 val responseBytes = response.body?.bytes()
                 if (responseBytes != null) {
@@ -635,14 +771,14 @@ class VotApiClient(
                     for (i in 0 until arr.length()) {
                         val item = arr.getJSONObject(i)
                         val startMs = when {
-                            item.has("startMs") -> item.optLong("startMs", 0L)
+                            item.has("startMs") -> item.optDouble("startMs", 0.0).toLong()
                             item.has("start") -> (item.optDouble("start", 0.0) * 1000).toLong()
                             else -> 0L
                         }
                         val endMs = when {
-                            item.has("endMs") -> item.optLong("endMs", 0L)
+                            item.has("endMs") -> item.optDouble("endMs", 0.0).toLong()
                             item.has("end") -> (item.optDouble("end", 0.0) * 1000).toLong()
-                            item.has("durationMs") -> startMs + item.optLong("durationMs", 0L)
+                            item.has("durationMs") -> startMs + item.optDouble("durationMs", 0.0).toLong()
                             item.has("duration") -> startMs + (item.optDouble("duration", 0.0) * 1000).toLong()
                             else -> startMs + 3000L
                         }
